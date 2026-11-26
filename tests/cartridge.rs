@@ -162,6 +162,106 @@ fn mmc3_switches_prg_and_raises_irq() {
 }
 
 #[test]
+fn mmc5_switches_four_8k_prg_banks() {
+    let mut prg = vec![0u8; 65536];
+    prg[0x2000] = 0x33;
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 5, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "MMC5 (5)");
+    cart.cpu_write(0x5100, 3);
+    cart.cpu_write(0x5114, 1);
+    assert_eq!(cart.cpu_read(0x8000), 0x33);
+}
+
+#[test]
+fn mmc5_banks_prg_ram_and_exposes_multiplier() {
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &[], 5, 0)).unwrap();
+    cart.cpu_write(0x5113, 0);
+    cart.cpu_write(0x6000, 0xAA);
+    cart.cpu_write(0x5113, 1);
+    assert_eq!(cart.cpu_read(0x6000), 0x00);
+    cart.cpu_write(0x6000, 0xBB);
+    cart.cpu_write(0x5113, 0);
+    assert_eq!(cart.cpu_read(0x6000), 0xAA);
+
+    cart.cpu_write(0x5205, 7);
+    cart.cpu_write(0x5206, 9);
+    assert_eq!(cart.cpu_read(0x5205), 63);
+    assert_eq!(cart.cpu_read(0x5206), 0);
+
+    cart.cpu_write(0x5C00, 0x5A);
+    assert_eq!(cart.cpu_read(0x5C00), 0x5A);
+}
+
+#[test]
+fn mmc5_scanline_irq_fires_on_compare() {
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &[], 5, 0)).unwrap();
+    cart.cpu_write(0x5203, 5);
+    cart.cpu_write(0x5204, 0x80);
+    for _ in 0..4 {
+        cart.on_scanline();
+    }
+    assert!(!cart.irq_pending());
+    cart.on_scanline();
+    assert!(cart.irq_pending());
+    assert_eq!(cart.cpu_read(0x5204) & 0x80, 0x80);
+}
+
+#[test]
+fn mmc5_uses_sprite_and_background_chr_banks() {
+    let mut chr = vec![0u8; 16384];
+    chr[0x00] = 0x10;
+    chr[0x400] = 0x20;
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &chr, 5, 0)).unwrap();
+    cart.cpu_write(0x5101, 3);
+    cart.cpu_write(0x5120, 1);
+    cart.cpu_write(0x5128, 0);
+    assert_eq!(cart.chr_read(0x0000), 0x10);
+    assert_eq!(cart.chr_read_sprite(0x0000), 0x20);
+}
+
+#[test]
+fn vrc6_switches_prg_and_chr_banks() {
+    let mut prg = vec![0u8; 32768];
+    prg[0x4000] = 0x44;
+    let mut chr = vec![0u8; 8192];
+    chr[0x400] = 0x99;
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &chr, 24, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "VRC6a (24)");
+    cart.cpu_write(0x8000, 1);
+    assert_eq!(cart.cpu_read(0x8000), 0x44);
+    cart.cpu_write(0xD001, 1);
+    assert_eq!(cart.chr_read(0x0400), 0x99);
+}
+
+#[test]
+fn vrc6_supports_mirroring_and_scanline_irq() {
+    let mut cart =
+        Cartridge::from_bytes(&ines(&vec![0u8; 32768], &vec![0u8; 8192], 24, 0)).unwrap();
+    cart.cpu_write(0xB003, 0x2C);
+    assert_eq!(cart.mirroring, Mirroring::OneScreenUpper);
+
+    cart.cpu_write(0xF000, 3);
+    cart.cpu_write(0xF001, 0x02);
+    for _ in 0..4 {
+        cart.on_scanline();
+    }
+    assert!(cart.irq_pending());
+    cart.cpu_write(0xF002, 0);
+    assert!(!cart.irq_pending());
+}
+
+#[test]
+fn vrc6b_swaps_register_address_lines() {
+    let mut chr = vec![0u8; 8192];
+    chr[0x400] = 0x77;
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 32768], &chr, 26, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "VRC6b (26)");
+    // On VRC6b, $D002 addresses CHR register 1.
+    cart.cpu_write(0xD002, 1);
+    assert_eq!(cart.chr_read(0x0400), 0x77);
+}
+
+#[test]
 fn chr_ram_writes_are_ignored_for_chr_rom() {
     let prg = vec![0u8; 16384];
     let mut chr = vec![0u8; 8192];

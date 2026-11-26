@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 const INES_HEADER_LEN: usize = 16;
 const TRAINER_LEN: usize = 512;
 const PRG_RAM_SIZE: usize = 8 * 1024;
+const MMC5_PRG_RAM_SIZE: usize = 64 * 1024;
 const CHR_RAM_SIZE: usize = 8 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,7 +216,14 @@ impl Cartridge {
             prg_rom,
             chr_memory,
             chr_is_ram,
-            prg_ram: vec![0; PRG_RAM_SIZE],
+            prg_ram: vec![
+                0;
+                if mapper == 5 {
+                    MMC5_PRG_RAM_SIZE
+                } else {
+                    PRG_RAM_SIZE
+                }
+            ],
         })
     }
 
@@ -271,14 +279,12 @@ impl Cartridge {
     /// CPU-side cartridge read for $4020-$FFFF.
     pub fn cpu_read(&self, addr: u16) -> u8 {
         match addr {
-            0x4020..=0x5FFF => 0,
-            0x6000..=0x7FFF => {
-                if self.mapper.prg_ram_disabled() {
-                    0
-                } else {
-                    self.prg_ram[usize::from(addr - 0x6000) % self.prg_ram.len()]
-                }
-            }
+            0x4020..=0x4FFF => 0,
+            0x5000..=0x5FFF => self.mapper.read_register(addr),
+            0x6000..=0x7FFF => match self.prg_ram_offset(addr) {
+                Some(index) => self.prg_ram[index],
+                None => 0,
+            },
             0x8000..=0xFFFF => {
                 let offset = self.prg_offset(addr);
                 self.prg_rom[offset]
@@ -287,12 +293,26 @@ impl Cartridge {
         }
     }
 
+    /// PRG RAM index for `$6000-$7FFF`, honouring mapper bank registers.
+    fn prg_ram_offset(&self, addr: u16) -> Option<usize> {
+        if self.mapper.prg_ram_disabled() || self.prg_ram.is_empty() {
+            return None;
+        }
+        let index = match &self.mapper {
+            Mapper::Mmc5(state) => {
+                usize::from(state.prg_ram_bank & 0x07) * 0x2000 + usize::from(addr - 0x6000)
+            }
+            _ => usize::from(addr - 0x6000),
+        };
+        Some(index % self.prg_ram.len())
+    }
+
     pub fn cpu_write(&mut self, addr: u16, value: u8) {
         match addr {
+            0x5000..=0x5FFF => self.mapper.write_register(addr, value),
             0x6000..=0x7FFF => {
-                if !self.mapper.prg_ram_disabled() {
-                    let idx = usize::from(addr - 0x6000) % self.prg_ram.len();
-                    self.prg_ram[idx] = value;
+                if let Some(index) = self.prg_ram_offset(addr) {
+                    self.prg_ram[index] = value;
                 }
             }
             0x8000..=0xFFFF => {
@@ -310,7 +330,14 @@ impl Cartridge {
 
     /// PPU pattern-table read ($0000-$1FFF).
     pub fn chr_read(&self, addr: u16) -> u8 {
-        let offset = self.chr_offset(addr);
+        let offset = self.chr_offset(addr, false);
+        self.chr_memory[offset]
+    }
+
+    /// Pattern fetch made on behalf of sprites; MMC5 keeps separate banks for
+    /// sprite and background fetches.
+    pub fn chr_read_sprite(&self, addr: u16) -> u8 {
+        let offset = self.chr_offset(addr, true);
         self.chr_memory[offset]
     }
 
@@ -319,7 +346,7 @@ impl Cartridge {
         if !self.chr_is_ram {
             return;
         }
-        let offset = self.chr_offset(addr);
+        let offset = self.chr_offset(addr, false);
         self.chr_memory[offset] = value;
     }
 
@@ -352,6 +379,42 @@ impl Cartridge {
                     }
                     _ => usize::from(bank_16k) + prg_len - 0x4000,
                 }
+            }
+            Mapper::Mmc5(state) => {
+                let banks = (prg_len / 0x2000).max(1);
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                let register = |value: u8| usize::from(value & 0x7F);
+                let bank = match state.prg_mode & 0x03 {
+                    0 => (register(state.prg_banks[3]) >> 2) * 4 + slot,
+                    1 => {
+                        if addr < 0xC000 {
+                            (register(state.prg_banks[1]) >> 1) * 2 + slot
+                        } else {
+                            (register(state.prg_banks[3]) >> 1) * 2 + slot - 2
+                        }
+                    }
+                    2 => {
+                        if addr < 0xC000 {
+                            (register(state.prg_banks[1]) >> 1) * 2 + slot
+                        } else if addr < 0xE000 {
+                            register(state.prg_banks[2])
+                        } else {
+                            register(state.prg_banks[3])
+                        }
+                    }
+                    _ => register(state.prg_banks[slot]),
+                };
+                bank % banks * 0x2000 + usize::from(addr & 0x1FFF)
+            }
+            Mapper::Vrc6(state) => {
+                let banks = (prg_len / 0x2000).max(1);
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                let bank = match slot {
+                    0 | 1 => usize::from(state.prg_16k & 0x0F) * 2 + slot,
+                    2 => usize::from(state.prg_8k & 0x3F),
+                    _ => banks - 1,
+                };
+                bank % banks * 0x2000 + usize::from(addr & 0x1FFF)
             }
             Mapper::Mmc3(state) => {
                 let banks = prg_len / 0x2000;
@@ -387,11 +450,22 @@ impl Cartridge {
         offset % prg_len
     }
 
-    fn chr_offset(&self, addr: u16) -> usize {
+    fn chr_offset(&self, addr: u16, sprite: bool) -> usize {
         let addr = usize::from(addr & 0x1FFF);
         let len = self.chr_memory.len().max(1);
         let offset = match &self.mapper {
             Mapper::Nrom | Mapper::Uxrom { .. } | Mapper::Axrom { .. } => addr % len,
+            Mapper::Mmc5(state) => {
+                let banks_1k = (len / 0x400).max(1);
+                let slot = addr / 0x400;
+                let register = if sprite { slot } else { 8 + slot % 4 };
+                (usize::from(state.chr_banks[register]) % banks_1k) * 0x400 + (addr & 0x3FF)
+            }
+            Mapper::Vrc6(state) => {
+                let banks_1k = (len / 0x400).max(1);
+                let slot = addr / 0x400;
+                (usize::from(state.chr[slot]) % banks_1k) * 0x400 + (addr & 0x3FF)
+            }
             Mapper::Cnrom { bank } => {
                 let banks_8k = (len / 0x2000).max(1);
                 (usize::from(*bank) % banks_8k) * 0x2000 + addr
@@ -435,6 +509,12 @@ impl Cartridge {
         let addr = (addr & 0x0FFF) as usize;
         let table = addr / 0x400;
         let offset = addr % 0x400;
+        if let Mapper::Mmc5(state) = &self.mapper {
+            // 0 and 1 select a CIRAM page; ExRAM and fill mode are approximated
+            // with page 0 because NES Core does not render ExRAM nametables.
+            let page = (state.nametable_map >> (table * 2)) & 0x03;
+            return usize::from(page == 1) * 0x400 + offset;
+        }
         let physical = match self.mirroring {
             Mirroring::Horizontal => [0, 0, 1, 1][table],
             Mirroring::Vertical => [0, 1, 0, 1][table],
@@ -447,9 +527,7 @@ impl Cartridge {
 
     /// Mapper IRQ lines are clocked once per rendered scanline (A12 rise).
     pub fn on_scanline(&mut self) {
-        if let Mapper::Mmc3(state) = &mut self.mapper {
-            state.clock_irq();
-        }
+        self.mapper.on_scanline();
     }
 
     pub fn irq_pending(&self) -> bool {

@@ -82,7 +82,7 @@ plus a wgpu-compatible adapter.
 | --- | --- |
 | "No audio device (silent)" | No default output device, or ALSA library missing on Linux |
 | Window opens but the emulator view is black before loading a ROM | Expected: there is no ROM loaded |
-| "mapper N is not supported by this build" | The ROM uses a mapper outside 0/1/2/3/4/7 |
+| "mapper N is not supported by this build" | The ROM uses a mapper outside 0/1/2/3/4/5/7/24/26 |
 | "missing iNES signature" | The file is not an iNES ROM (or is a raw/headered dump of another format) |
 | "PRG data is truncated" | The file is incomplete or the header is wrong |
 | Save state fails to load | State from a different ROM or a newer format version |

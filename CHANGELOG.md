@@ -4,6 +4,27 @@ All notable changes to NES Core are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-26
+
+### Added
+
+- MMC5 (mapper 5): all four PRG banking modes, 1 KB CHR banking with separate
+  sprite and background banks, 64 KB of banked PRG RAM, 1 KB of extended RAM at
+  `$5C00-$5FFF`, per-table nametable mapping through `$5105`, the 8x8
+  multiplier, frame status and scanline-compare IRQs.
+- VRC6a and VRC6b (mappers 24 and 26): 16 KB and 8 KB PRG banking, 1 KB CHR
+  banking, mirroring control through `$B003`, and scanline IRQs.
+- Both mappers keep their registers in versioned save states.
+
+### Known limitations
+
+- MMC5 expansion audio, vertical split-screen, ExRAM extended attributes and
+  fill-mode nametables are not implemented. CHR banking is evaluated at 1 KB
+  granularity in every CHR mode, and the PRG RAM protect registers are stored
+  but not enforced.
+- VRC6 expansion audio and the cycle-counting IRQ mode are not implemented.
+  The alternate `$B003` CHR banking modes are treated as 1 KB banks.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

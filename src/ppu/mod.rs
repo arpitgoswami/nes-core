@@ -414,8 +414,8 @@ impl Ppu {
                 };
                 let row_in_tile = row % 8;
                 let addr = pattern_table + u16::from(tile_index) * 16 + row_in_tile as u16;
-                let low = self.cart.borrow().chr_read(addr);
-                let high = self.cart.borrow().chr_read(addr + 8);
+                let low = self.cart.borrow().chr_read_sprite(addr);
+                let high = self.cart.borrow().chr_read_sprite(addr + 8);
                 let palette = 0x10 + (attr & 0x03) * 4;
                 let behind_bg = attr & 0x20 != 0;
                 for col in 0..8usize {

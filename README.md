@@ -26,7 +26,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
 | APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
-| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 7 AxROM |
+| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5 (partial), 7 AxROM, 24/26 VRC6 (partial) |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
 | Save states | Implemented | Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes |
 | Settings and library | Implemented | Persisted in the per-user configuration directory |
@@ -43,6 +43,16 @@ changes), while per-dot mid-scanline tricks are not emulated. Sprite overflow
 and sprite-0 hit detection are approximated. MMC3's IRQ is clocked once per
 rendered scanline rather than from an exact A12 filter. These limits are why NES
 Core does not claim full NES compatibility.
+
+MMC5 support is deliberately partial. PRG banking, 1 KB CHR banking with
+separate sprite and background banks, banked PRG RAM, the 8x8 multiplier, the
+scanline IRQ and `$5105` nametable mapping work. MMC5 expansion audio, vertical
+split-screen rendering, ExRAM extended attributes and fill-mode nametables are
+not implemented, CHR banking is always evaluated at 1 KB granularity, and the
+PRG RAM write-protect registers are stored but not enforced. VRC6 supports
+PRG/CHR banking, mirroring and scanline IRQs; its expansion audio and the
+cycle-counting IRQ mode are not implemented, and the alternate `$B003` CHR
+banking modes are treated as 1 KB banks.
 
 ## Screenshots
 
@@ -79,8 +89,10 @@ and data flow.
 ## Installation
 
 The GitHub Actions workflow builds a Windows release binary on every change and
-uploads it as the `nes-core-windows` workflow artifact. Maintainers can attach
-that `nes-core.exe` to a release. There is no installer.
+uploads it as the `nes-core-windows` workflow artifact. Tagged releases publish
+that build as `nes-core-windows.zip` on the
+[releases page](https://github.com/arpitgoswami/nes-core/releases); the archive
+contains `nes-core.exe`. Linux and macOS builds are done from source.
 
 There is no installer and no auto-update. NES Core does not need administrator
 privileges.
@@ -159,14 +171,16 @@ DMA stalls, cartridge mapping, PPU background output, NMI handling, the
 controller shift register and save states.
 
 It has **not** been validated against a broad library of commercial games, and
-no game-specific compatibility claims are made. Mapper coverage (0/1/2/3/4/7)
-and the PPU's scanline-granular rendering are the main practical limits. Bug
+no game-specific compatibility claims are made. Mapper coverage
+(0/1/2/3/4/5/7/24/26, with MMC5 and VRC6 partial) and the PPU's
+scanline-granular rendering are the main practical limits. Bug
 reports that include a legally redistributable test ROM are the most useful
 kind.
 
 ## Roadmap
 
-- More mappers (5/MMC5, 9, 10, 11, 66, 69, 71) and expansion audio
+- More mappers (9, 10, 11, 66, 69, 71)
+- MMC5 split-screen and ExRAM attributes; MMC5/VRC6 expansion audio
 - Per-dot PPU rendering for exact raster effects
 - Gamepad support (SDL/`gilrs`) and configurable controller ports
 - PAL/Dendy timing modes

@@ -67,9 +67,17 @@ header declares no CHR banks. Nametable mirroring is resolved by the cartridge
 (`nametable_index`), which lets one-screen and four-screen cartridges work
 without special cases in the PPU.
 
-Implemented mappers: NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4) and
-AxROM (7). MMC3 IRQ counters are clocked once per rendered scanline, which is an
-approximation of the A12 filter.
+Implemented mappers: NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), MMC5
+(5), AxROM (7) and VRC6 (24/26). MMC3, MMC5 and VRC6 IRQ counters are clocked
+once per rendered scanline, which approximates the hardware's A12 filter.
+
+MMC5 owns a register window at `$5000-$5FFF`: PRG and CHR banking, 64 KB of
+banked PRG RAM, the 1 KB ExRAM at `$5C00-$5FFF`, per-table nametable mapping,
+the 8x8 multiplier and the scanline IRQ. Sprite pattern fetches go through
+`chr_read_sprite`, so MMC5's separate sprite banks are honoured. VRC6 keeps its
+registers above `$8000` and handles both address-line variants (24 and 26).
+MMC5 split-screen rendering, ExRAM extended attributes and expansion audio are
+not emulated.
 
 ## PPU
 
@@ -165,7 +173,8 @@ otherwise generated deterministically from the ROM fingerprint.
 - `tests/cpu.rs` exercises addressing, flags, cycle penalties, stack behaviour,
   interrupts and unofficial instructions with a RAM-only bus.
 - `tests/cartridge.rs` builds synthetic iNES images and checks validation, NROM
-  mirroring, bank switching for UxROM/CNROM/MMC1/MMC3, and CHR RAM behaviour.
+  mirroring, bank switching for UxROM/CNROM/MMC1/MMC3/MMC5/VRC6, MMC5's
+multiplier, PRG RAM and scanline IRQ, and CHR RAM behaviour.
 - `tests/emulator.rs` builds an NROM image that programs the PPU, enables NMI and
   counts NMIs; it asserts rendered pixels, audio sample counts, controller
   shifting and save-state round-trips/version rejection.
