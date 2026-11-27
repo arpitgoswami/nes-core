@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NES Core - Project Progress Dashboard</title>
+<meta name="description" content="Live progress dashboard for NES Core, an independent NES/Famicom emulator written in Rust." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#07070a;--bg2:#0e0e14;--bg3:#15151e;--fg:#f5f5f7;--muted:#8a8a9a;--dim:#5a5a6a;--red:#ff3d5a;--vio:#7c5cff;--cyan:#00d4ff;--gold:#ffc857;--green:#3ddc97;--line:rgba(255,255,255,.08);--glass:rgba(255,255,255,.04);--grad:linear-gradient(135deg,#ff3d5a 0%,#7c5cff 50%,#00d4ff 100%);--ease:cubic-bezier(.2,.8,.2,1)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--fg);overflow-x:hidden;cursor:none;line-height:1.6}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+::selection{background:var(--red);color:#fff}
+.noise{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.cursor{position:fixed;width:10px;height:10px;background:var(--fg);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:difference;transition:width .2s var(--ease),height .2s var(--ease)}
+.cursor-ring{position:fixed;width:40px;height:40px;border:1px solid rgba(255,255,255,.4);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);transition:width .3s var(--ease),height .3s var(--ease),border-color .3s}
+body.hovering .cursor{width:6px;height:6px}
+body.hovering .cursor-ring{width:70px;height:70px;border-color:var(--red)}
+.progress{position:fixed;top:0;left:0;height:2px;background:var(--grad);z-index:9997;width:0%}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:20px 40px;display:flex;align-items:center;justify-content:space-between;backdrop-filter:blur(12px);background:rgba(7,7,10,.6);border-bottom:1px solid var(--line)}
+.logo{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+.logo .dot{width:10px;height:10px;border-radius:50%;background:var(--grad);box-shadow:0 0 20px var(--red)}
+.nav-links{display:flex;gap:28px;font-size:13px;color:var(--muted)}
+.nav-links a:hover{color:var(--fg)}
+.nav-cta{padding:10px 20px;border:1px solid var(--line);border-radius:999px;font-size:13px;transition:.3s var(--ease)}
+.nav-cta:hover{background:var(--fg);color:var(--bg)}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:120px 40px 60px;position:relative;overflow:hidden}
+.mesh{position:absolute;inset:-20%;filter:blur(80px);opacity:.5;z-index:0}
+.mesh span{position:absolute;border-radius:50%;animation:float 12s ease-in-out infinite}
+.mesh .m1{width:600px;height:600px;background:var(--red);top:10%;left:10%;animation-delay:0s}
+.mesh .m2{width:500px;height:500px;background:var(--vio);top:30%;right:5%;animation-delay:-4s}
+.mesh .m3{width:400px;height:400px;background:var(--cyan);bottom:10%;left:40%;animation-delay:-8s}
+@keyframes float{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-30px) scale(1.1)}}
+.hero-grid{position:relative;z-index:2;max-width:1400px;margin:0 auto;width:100%}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:30px}
+.eyebrow .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.hero h1{font-family:'Space Grotesk',sans-serif;font-size:clamp(64px,14vw,200px);font-weight:700;line-height:.9;letter-spacing:-6px;background:linear-gradient(180deg,#fff 0%,rgba(255,255,255,.3) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero h1 .accent{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-sub{margin-top:30px;max-width:720px;font-size:20px;color:var(--muted);font-weight:300}
+.hero-meta{margin-top:50px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border:1px solid var(--line);border-radius:999px;font-size:13px;background:var(--glass);backdrop-filter:blur(8px)}
+.chip .b{width:6px;height:6px;border-radius:50%}
+.chip.ok .b{background:var(--green)}
+.chip.warn .b{background:var(--gold)}
+.chip.no .b{background:var(--red)}
+.hero-actions{margin-top:40px;display:flex;gap:16px;flex-wrap:wrap}
+.btn{padding:16px 32px;border-radius:999px;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:10px;transition:.3s var(--ease);position:relative;overflow:hidden}
+.btn.primary{background:var(--fg);color:var(--bg)}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 20px 40px rgba(255,255,255,.15)}
+.btn.ghost{border:1px solid var(--line);background:var(--glass)}
+.btn.ghost:hover{border-color:var(--fg)}
+.btn .arrow{transition:.3s var(--ease)}
+.btn:hover .arrow{transform:translateX(4px)}
+.marquee{padding:40px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap;background:var(--bg2)}
+.marquee-track{display:inline-block;animation:scroll 40s linear infinite;font-family:'Space Grotesk',sans-serif;font-size:48px;font-weight:600;color:rgba(255,255,255,.15);letter-spacing:-1px}
+.marquee-track span{margin:0 40px}
+@keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+section{padding:120px 40px;max-width:1400px;margin:0 auto}
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:60px;gap:40px;flex-wrap:wrap}
+.sec-num{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:2px;margin-bottom:12px}
+.sec-title{font-family:'Space Grotesk',sans-serif;font-size:clamp(40px,6vw,72px);font-weight:700;letter-spacing:-2px;line-height:1}
+.sec-desc{max-width:480px;color:var(--muted);font-size:16px}
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
+.reveal.in{opacity:1;transform:translateY(0)}
+.reveal.delay1{transition-delay:.1s}
+.reveal.delay2{transition-delay:.2s}
+.reveal.delay3{transition-delay:.3s}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;background:var(--line);border:1px solid var(--line);border-radius:24px;overflow:hidden}
+.stat{background:var(--bg);padding:40px 30px;position:relative}
+.stat .num{font-family:'Space Grotesk',sans-serif;font-size:64px;font-weight:700;letter-spacing:-3px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+.stat .label{margin-top:12px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px}
+.stat .note{margin-top:8px;font-size:12px;color:var(--dim)}
+@media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}}
+.timeline{position:relative;padding-left:40px}
+.timeline::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:linear-gradient(180deg,var(--red),var(--vio),var(--cyan))}
+.tl-item{position:relative;padding-bottom:60px}
+.tl-item::before{content:'';position:absolute;left:-44px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--bg);border:2px solid var(--red);box-shadow:0 0 12px var(--red)}
+.tl-item.v2::before{border-color:var(--vio);box-shadow:0 0 12px var(--vio)}
+.tl-item.v3::before{border-color:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+.tl-item.v4::before{border-color:var(--gold);box-shadow:0 0 12px var(--gold)}
+.tl-item.v5::before{border-color:var(--green);box-shadow:0 0 12px var(--green)}
+.tl-ver{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red);letter-spacing:2px;margin-bottom:8px}
+.tl-item.v2 .tl-ver{color:var(--vio)}
+.tl-item.v3 .tl-ver{color:var(--cyan)}
+.tl-item.v4 .tl-ver{color:var(--gold)}
+.tl-item.v5 .tl-ver{color:var(--green)}
+.tl-title{font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:600;letter-spacing:-1px;margin-bottom:8px}
+.tl-date{font-size:13px;color:var(--muted);margin-bottom:16px}
+.tl-list{list-style:none;display:grid;gap:8px}
+.tl-list li{font-size:14px;color:var(--muted);padding-left:20px;position:relative}
+.tl-list li::before{content:'->';position:absolute;left:0;color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:11px}
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:900px){.feat-grid{grid-template-columns:1fr}}
+.feat{background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:28px;transition:.3s var(--ease);position:relative;overflow:hidden}
+.feat:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.2)}
+.feat .row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.feat h3{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;letter-spacing:-.3px}
+.badge{font-size:10px;padding:4px 10px;border-radius:999px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-transform:uppercase}
+.badge.ok{background:rgba(61,220,151,.12);color:var(--green)}
+.badge.partial{background:rgba(255,200,87,.12);color:var(--gold)}
+.badge.no{background:rgba(255,61,90,.12);color:var(--red)}
+.feat p{font-size:13px;color:var(--muted);line-height:1.6}
+.mappers{display:flex;flex-wrap:wrap;gap:10px}
+.mapper{padding:12px 18px;border:1px solid var(--line);border-radius:12px;background:var(--bg2);font-family:'JetBrains Mono',monospace;font-size:13px;display:flex;align-items:center;gap:10px;transition:.3s var(--ease)}
+.mapper:hover{border-color:var(--vio);transform:translateY(-2px)}
+.mapper .n{color:var(--fg);font-weight:500}
+.mapper .name{color:var(--muted);font-size:12px}
+.mapper .status{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.acc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:900px){.acc-grid{grid-template-columns:1fr}}
+.acc{background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:30px}
+.acc h3{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600;margin-bottom:12px}
+.acc ul{list-style:none;display:grid;gap:10px}
+.acc li{font-size:14px;color:var(--muted);padding-left:20px;position:relative}
+.acc li::before{content:'x';position:absolute;left:0;color:var(--red);font-family:'JetBrains Mono',monospace;font-size:11px}
+.acc.good li::before{content:'+';color:var(--green)}
+.test-row{display:grid;grid-template-columns:1fr 2fr;gap:40px;align-items:center}
+.test-bars{display:grid;gap:20px}
+.bar{display:grid;gap:8px}
+.bar .meta{display:flex;justify-content:space-between;font-size:13px}
+.bar .meta .name{color:var(--fg)}
+.bar .meta .val{color:var(--muted);font-family:'JetBrains Mono',monospace}
+.bar .track{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden}
+.bar .fill{height:100%;background:var(--grad);border-radius:999px;width:0%;transition:width 1.5s var(--ease)}
+.ci{background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:30px;display:grid;gap:16px}
+.ci .row{display:flex;justify-content:space-between;align-items:center;font-size:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.ci .row:last-child{border-bottom:none}
+.ci .row .k{color:var(--muted)}
+.ci .row .v{font-family:'JetBrains Mono',monospace}
+.ci .row .v.ok{color:var(--green)}
+.release{background:linear-gradient(135deg,rgba(255,61,90,.1),rgba(124,92,255,.1));border:1px solid var(--line);border-radius:24px;padding:50px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+@media(max-width:900px){.release{grid-template-columns:1fr}}
+.release h3{font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700;letter-spacing:-1px;margin-bottom:12px}
+.release p{color:var(--muted);font-size:14px;margin-bottom:20px}
+.release .meta{display:grid;gap:12px}
+.release .meta .r{display:flex;justify-content:space-between;font-size:13px;padding:10px 0;border-bottom:1px solid var(--line)}
+.release .meta .r .k{color:var(--muted)}
+.release .meta .r .v{font-family:'JetBrains Mono',monospace;font-size:12px}
+.roadmap{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:900px){.roadmap{grid-template-columns:1fr}}
+.road-item{padding:20px 24px;border:1px solid var(--line);border-radius:14px;background:var(--bg2);font-size:14px;color:var(--muted);display:flex;align-items:center;gap:12px;transition:.3s var(--ease)}
+.road-item:hover{border-color:var(--cyan);color:var(--fg)}
+.road-item .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);flex-shrink:0}
+.ni{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.ni th,.ni td{padding:16px 20px;text-align:left;font-size:14px;border-bottom:1px solid var(--line)}
+.ni th{background:var(--bg2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;font-weight:500}
+.ni tr:last-child td{border-bottom:none}
+.ni .area{font-family:'Space Grotesk',sans-serif;font-weight:600}
+.ni .status{font-family:'JetBrains Mono',monospace;font-size:12px}
+.ni .status.no{color:var(--red)}
+.ni .status.partial{color:var(--gold)}
+.ni .status.ok{color:var(--green)}
+footer{padding:80px 40px 40px;border-top:1px solid var(--line);max-width:1400px;margin:0 auto}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px;margin-bottom:60px}
+@media(max-width:900px){.footer-grid{grid-template-columns:1fr}}
+footer h4{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;margin-bottom:16px}
+footer ul{list-style:none;display:grid;gap:10px}
+footer li a{color:var(--muted);font-size:13px;transition:.2s}
+footer li a:hover{color:var(--fg)}
+.footer-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:30px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);flex-wrap:wrap;gap:10px}
+.magnetic{transition:transform .3s var(--ease)}
+.hero-scroll{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);letter-spacing:3px;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:10px}
+.hero-scroll .line{width:1px;height:40px;background:linear-gradient(180deg,var(--fg),transparent);animation:scrolldown 2s infinite}
+@keyframes scrolldown{0%{transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}51%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<div class="cursor" id="cursor"></div>
+<div class="cursor-ring" id="cursorRing"></div>
+<div class="progress" id="progress"></div>
+<nav>
+  <div class="logo"><span class="dot"></span>NES CORE</div>
+  <div class="nav-links">
+    <a href="#milestones" class="hover">Milestones</a>
+    <a href="#features" class="hover">Features</a>
+    <a href="#mappers" class="hover">Mappers</a>
+    <a href="#tests" class="hover">Tests</a>
+    <a href="#roadmap" class="hover">Roadmap</a>
+  </div>
+  <a class="nav-cta hover" href="https://github.com/arpitgoswami/nes-core" target="_blank" rel="noopener">GitHub</a>
+</nav>
+<header class="hero">
+  <div class="mesh"><span class="m1"></span><span class="m2"></span><span class="m3"></span></div>
+  <div class="hero-grid">
+    <div class="eyebrow reveal"><span class="pulse"></span>PROJECT DASHBOARD / v0.5.0 / 2026-11-27</div>
+    <h1 class="reveal delay1">NES <span class="accent">CORE.</span></h1>
+    <p class="hero-sub reveal delay2">An independent, open-source NES and Famicom emulator written in Rust. CPU, PPU, APU, memory bus, controllers, cartridge parsing and mappers - all implemented in this repository. No mocks, no wrappers around another emulator.</p>
+    <div class="hero-meta reveal delay3">
+      <span class="chip ok"><span class="b"></span>v0.5.0 shipped</span>
+      <span class="chip ok"><span class="b"></span>53 tests passing</span>
+      <span class="chip ok"><span class="b"></span>CI green</span>
+      <span class="chip warn"><span class="b"></span>15 mappers</span>
+      <span class="chip no"><span class="b"></span>Gamepad pending</span>
+    </div>
+    <div class="hero-actions reveal delay3">
+      <a class="btn primary magnetic hover" href="https://github.com/arpitgoswami/nes-core" target="_blank" rel="noopener">View repository <span class="arrow">-></span></a>
+      <a class="btn ghost magnetic hover" href="#milestones">Explore progress <span class="arrow">-></span></a>
+    </div>
+  </div>
+  <div class="hero-scroll">scroll<div class="line"></div></div>
+</header>
+<div class="marquee">
+  <div class="marquee-track">
+    <span>RUST</span><span>EGUI</span><span>WGPU</span><span>6502 CPU</span><span>PPU</span><span>APU</span><span>MMC5</span><span>VRC6</span><span>PAL TIMING</span><span>SAVE STATES</span><span>OPEN SOURCE</span><span>MIT LICENSE</span>
+    <span>RUST</span><span>EGUI</span><span>WGPU</span><span>6502 CPU</span><span>PPU</span><span>APU</span><span>MMC5</span><span>VRC6</span><span>PAL TIMING</span><span>SAVE STATES</span><span>OPEN SOURCE</span><span>MIT LICENSE</span>
+  </div>
+</div>
+<section id="stats">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">01 / METRICS</div>
+      <h2 class="sec-title reveal">By the numbers.</h2>
+    </div>
+    <p class="sec-desc reveal">Conservative counts. "Implemented" means the code exists and is covered by the tests in tests/.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="num" data-target="53">0</div><div class="label">Tests passing</div><div class="note">33 cartridge, 12 CPU, 5 emulator, 3 PPU</div></div>
+    <div class="stat"><div class="num" data-target="15">0</div><div class="label">Mappers supported</div><div class="note">0,1,2,3,4,5,7,9,10,11,24,26,66,71,232</div></div>
+    <div class="stat"><div class="num" data-target="5">0</div><div class="label">Milestones shipped</div><div class="note">0.1.0 to 0.5.0</div></div>
+    <div class="stat"><div class="num" data-target="44100">0</div><div class="label">Audio rate (Hz)</div><div class="note">Non-linear mixer at 44.1 kHz</div></div>
+  </div>
+</section>
+<section id="milestones">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">02 / MILESTONES</div>
+      <h2 class="sec-title reveal">Version history.</h2>
+    </div>
+    <p class="sec-desc reveal">Each milestone was pushed to main with README and CHANGELOG updates and verified green in CI.</p>
+  </div>
+  <div class="timeline">
+    <div class="tl-item v1 reveal">
+      <div class="tl-ver">v0.1.0</div>
+      <div class="tl-title">Core emulator and desktop app</div>
+      <div class="tl-date">2026-11-25</div>
+      <ul class="tl-list">
+        <li>iNES and NES 2.0 ROM parsing with validation</li>
+        <li>Ricoh 2A03 CPU, all official plus common unofficial instructions</li>
+        <li>Scanline PPU: background, sprites, scrolling, NMI, emphasis</li>
+        <li>APU: two pulses, triangle, noise, DMC, frame sequencer</li>
+        <li>Mappers: NROM, MMC1, UxROM, CNROM, MMC3, AxROM</li>
+        <li>Desktop app, save states, settings, rebindable controls</li>
+        <li>GitHub Actions CI for fmt, clippy, tests, Windows build</li>
+      </ul>
+    </div>
+    <div class="tl-item v2 reveal">
+      <div class="tl-ver">v0.2.0</div>
+      <div class="tl-title">MMC5 and VRC6 foundations</div>
+      <div class="tl-date">2026-11-26</div>
+      <ul class="tl-list">
+        <li>MMC5: PRG banking modes, 1 KB CHR banking, PRG RAM, ExRAM, multiplier, IRQ</li>
+        <li>VRC6a and VRC6b: PRG and CHR banking, mirroring, scanline IRQ</li>
+        <li>Versioned save states for both mappers</li>
+      </ul>
+    </div>
+    <div class="tl-item v3 reveal">
+      <div class="tl-ver">v0.3.0</div>
+      <div class="tl-title">Expansion audio and split screen</div>
+      <div class="tl-date">2026-11-27</div>
+      <ul class="tl-list">
+        <li>MMC5 expansion audio: pulses, PCM channel, PCM IRQ, enable and status</li>
+        <li>MMC5 vertical split screen from ExRAM</li>
+        <li>MMC5 ExRAM extended attributes per tile</li>
+        <li>VRC6 expansion audio: pulses plus sawtooth, halt and scaling</li>
+        <li>Expansion audio clocked per CPU cycle and mixed into output</li>
+        <li>Released as nes-core-windows.zip on GitHub releases</li>
+      </ul>
+    </div>
+    <div class="tl-item v4 reveal">
+      <div class="tl-ver">v0.4.0</div>
+      <div class="tl-title">MMC2, MMC4 and more mappers</div>
+      <div class="tl-date">2026-11-27</div>
+      <ul class="tl-list">
+        <li>MMC2 and MMC4 with latch-driven CHR switching from PPU fetches</li>
+        <li>Color Dreams and GxROM bank switching</li>
+        <li>Camerica with Fire Hawk mirroring register</li>
+        <li>Cartridge::chr_read_ppu for mapper PPU fetch reporting</li>
+      </ul>
+    </div>
+    <div class="tl-item v5 reveal">
+      <div class="tl-ver">v0.5.0</div>
+      <div class="tl-title">MMC5 nametables, VRC6 banking, Quattro, PAL</div>
+      <div class="tl-date">2026-11-27</div>
+      <ul class="tl-list">
+        <li>MMC5 fill-mode nametables and ExRAM used as nametable</li>
+        <li>MMC5 PCM read mode and open-bus reads</li>
+        <li>VRC6 CHR banking modes 0 to 3 and cycle-counting IRQ</li>
+        <li>Quattro mapper 232 outer and inner banking</li>
+        <li>PAL detection: 312 scanlines, 3.2 dots per cycle, 50.007 Hz</li>
+      </ul>
+    </div>
+    <div class="tl-item v3 reveal">
+      <div class="tl-ver">AFTER 0.5.0</div>
+      <div class="tl-title">PPU scrolling fix on main</div>
+      <div class="tl-date">2026-11-27</div>
+      <ul class="tl-list">
+        <li>Copy t to v at dot 257 and pre-render dots 280 to 304</li>
+        <li>Y increment gated on rendering</li>
+        <li>NTSC odd-frame dot skip restored</li>
+        <li>Scroll regression test added, 53 tests passing</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section id="features">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">03 / FEATURES</div>
+      <h2 class="sec-title reveal">What works.</h2>
+    </div>
+    <p class="sec-desc reveal">Status is deliberately conservative. Implemented means the code exists and is covered by tests.</p>
+  </div>
+  <div class="feat-grid">
+    <div class="feat reveal"><div class="row"><h3>iNES parser</h3><span class="badge ok">Implemented</span></div><p>Validates signature, sizes and mapper. Reads NES 2.0 size nibbles. Skips trainers.</p></div>
+    <div class="feat reveal"><div class="row"><h3>CPU (2A03)</h3><span class="badge ok">Implemented</span></div><p>All official 6502 instructions, common unofficial ones, addressing modes, page-cross and branch penalties, NMI, IRQ, reset, DMA stalls.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Memory bus</h3><span class="badge ok">Implemented</span></div><p>2 KB RAM mirroring, PPU, APU and controller registers, cartridge mapping.</p></div>
+    <div class="feat reveal"><div class="row"><h3>PPU</h3><span class="badge ok">Implemented</span></div><p>Background, sprites 8x8 and 8x16, scrolling, nametables, attributes, palettes, sprite 0 hit, vblank, NMI, emphasis.</p></div>
+    <div class="feat reveal"><div class="row"><h3>APU</h3><span class="badge ok">Implemented</span></div><p>Two pulses, triangle, noise, DMC playback, frame sequencer, frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Controllers</h3><span class="badge ok">Implemented</span></div><p>Two standard controllers with correct strobe and shift behavior.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Mappers</h3><span class="badge partial">Partial</span></div><p>0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3, 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24 and 26 VRC6, 66 GxROM, 71 Camerica, 232 Quattro.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Audio output</h3><span class="badge ok">Implemented</span></div><p>cpal on Windows and macOS. Runtime-loaded ALSA on Linux with no dev headers required.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Save states</h3><span class="badge ok">Implemented</span></div><p>Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Settings and library</h3><span class="badge ok">Implemented</span></div><p>Persisted in the per-user configuration directory.</p></div>
+    <div class="feat reveal"><div class="row"><h3>GUI</h3><span class="badge ok">Implemented</span></div><p>Dark desktop UI with library, game view, settings, save states, achievements, about.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Gamepad input</h3><span class="badge no">Not implemented</span></div><p>Keyboard only in this build.</p></div>
+    <div class="feat reveal"><div class="row"><h3>PAL timing</h3><span class="badge ok">Implemented</span></div><p>Header-detected PAL runs 312 scanlines at 3.2 dots per CPU cycle and 50.007 Hz.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Rewind, netplay, NSF</h3><span class="badge no">Not implemented</span></div><p>On the roadmap.</p></div>
+  </div>
+</section>
+<section id="mappers">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">04 / MAPPERS</div>
+      <h2 class="sec-title reveal">Cartridge coverage.</h2>
+    </div>
+    <p class="sec-desc reveal">Fifteen mappers, each with versioned save-state support.</p>
+  </div>
+  <div class="mappers">
+    <div class="mapper reveal"><span class="status"></span><span class="n">0</span><span class="name">NROM</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">1</span><span class="name">MMC1</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">2</span><span class="name">UxROM</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">3</span><span class="name">CNROM</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">4</span><span class="name">MMC3 + IRQ</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">5</span><span class="name">MMC5 full</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">7</span><span class="name">AxROM</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">9</span><span class="name">MMC2</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">10</span><span class="name">MMC4</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">11</span><span class="name">Color Dreams</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">24</span><span class="name">VRC6a</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">26</span><span class="name">VRC6b</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">66</span><span class="name">GxROM</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">71</span><span class="name">Camerica</span></div>
+    <div class="mapper reveal"><span class="status"></span><span class="n">232</span><span class="name">Quattro</span></div>
+  </div>
+</section>
+<section id="accuracy">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">05 / ACCURACY</div>
+      <h2 class="sec-title reveal">Honest boundaries.</h2>
+    </div>
+    <p class="sec-desc reveal">What is exact and what is approximated, stated plainly.</p>
+  </div>
+  <div class="acc-grid">
+    <div class="acc good reveal">
+      <h3>Working</h3>
+      <ul>
+        <li>PPU advances dot by dot for timing</li>
+        <li>Register writes between scanlines work</li>
+        <li>Status-bar splits and scroll changes</li>
+        <li>MMC5 PRG, CHR, ExRAM, multiplier, IRQ</li>
+        <li>VRC6 PRG, CHR, mirroring, scanline and cycle IRQ</li>
+        <li>NTSC and PAL timing</li>
+        <li>Expansion audio per CPU cycle</li>
+      </ul>
+    </div>
+    <div class="acc reveal">
+      <h3>Approximated or limited</h3>
+      <ul>
+        <li>PPU composes each visible scanline in one step</li>
+        <li>Per-dot mid-scanline tricks not emulated</li>
+        <li>Sprite overflow and sprite 0 hit approximated</li>
+        <li>MMC3 IRQ clocked per rendered scanline, not exact A12</li>
+        <li>MMC5 CHR banking at 1 KB granularity</li>
+        <li>MMC5 background substitution per screen tile</li>
+        <li>MMC5 split fine scroll uses SL-board path</li>
+        <li>PRG RAM write-protect registers stored, not enforced</li>
+        <li>MMC2 and MMC4 sprite-side latches do not fire</li>
+        <li>Quattro ignores Aladdin submapper swapped bits</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section id="tests">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">06 / TESTS AND CI</div>
+      <h2 class="sec-title reveal">Verified green.</h2>
+    </div>
+    <p class="sec-desc reveal">cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test --all-targets.</p>
+  </div>
+  <div class="test-row">
+    <div class="test-bars">
+      <div class="bar">
+        <div class="meta"><span class="name">Cartridge tests</span><span class="val">33</span></div>
+        <div class="track"><div class="fill" data-width="62"></div></div>
+      </div>
+      <div class="bar">
+        <div class="meta"><span class="name">CPU tests</span><span class="val">12</span></div>
+        <div class="track"><div class="fill" data-width="23"></div></div>
+      </div>
+      <div class="bar">
+        <div class="meta"><span class="name">Emulator tests</span><span class="val">5</span></div>
+        <div class="track"><div class="fill" data-width="10"></div></div>
+      </div>
+      <div class="bar">
+        <div class="meta"><span class="name">PPU tests</span><span class="val">3</span></div>
+        <div class="track"><div class="fill" data-width="6"></div></div>
+      </div>
+    </div>
+    <div class="ci">
+      <div class="row"><span class="k">cargo fmt --check</span><span class="v ok">PASS</span></div>
+      <div class="row"><span class="k">cargo clippy -D warnings</span><span class="v ok">PASS</span></div>
+      <div class="row"><span class="k">cargo test --all-targets</span><span class="v ok">53 TESTS</span></div>
+      <div class="row"><span class="k">CI workflow</span><span class="v ok">GREEN</span></div>
+      <div class="row"><span class="k">Windows release build</span><span class="v ok">UPLOADED</span></div>
+      <div class="row"><span class="k">GUI launched</span><span class="v">NOT VERIFIED</span></div>
+      <div class="row"><span class="k">Audio heard</span><span class="v">NOT VERIFIED</span></div>
+    </div>
+  </div>
+</section>
+<section id="release">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">07 / RELEASE</div>
+      <h2 class="sec-title reveal">v0.3.0 Windows build.</h2>
+    </div>
+    <p class="sec-desc reveal">Tagged release published on GitHub with the Windows binary.</p>
+  </div>
+  <div class="release">
+    <div>
+      <h3>nes-core-windows.zip</h3>
+      <p>Archive contains nes-core.exe. Built by the GitHub Actions workflow and attached to the v0.3.0 release. Verified by public re-download.</p>
+      <a class="btn primary magnetic hover" href="https://github.com/arpitgoswami/nes-core/releases" target="_blank" rel="noopener">Open releases <span class="arrow">-></span></a>
+    </div>
+    <div class="meta">
+      <div class="r"><span class="k">Tag</span><span class="v">v0.3.0</span></div>
+      <div class="r"><span class="k">Asset</span><span class="v">nes-core-windows.zip</span></div>
+      <div class="r"><span class="k">Size</span><span class="v">5,616,935 bytes</span></div>
+      <div class="r"><span class="k">SHA-256</span><span class="v">d04c787c...2154e00</span></div>
+      <div class="r"><span class="k">Linux and macOS</span><span class="v">BUILD FROM SOURCE</span></div>
+    </div>
+  </div>
+</section>
+<section id="roadmap">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">08 / ROADMAP</div>
+      <h2 class="sec-title reveal">What is next.</h2>
+    </div>
+    <p class="sec-desc reveal">Planned work, in no strict order.</p>
+  </div>
+  <div class="roadmap">
+    <div class="road-item reveal"><span class="dot"></span>More mappers: 69, 88, 118, 119, 180, 184</div>
+    <div class="road-item reveal"><span class="dot"></span>Per-dot PPU rendering for exact raster effects</div>
+    <div class="road-item reveal"><span class="dot"></span>Gamepad support via SDL or gilrs</div>
+    <div class="road-item reveal"><span class="dot"></span>Configurable controller ports</div>
+    <div class="road-item reveal"><span class="dot"></span>Dendy timing and PAL colour differences</div>
+    <div class="road-item reveal"><span class="dot"></span>Rewind buffer and save-state thumbnails</div>
+    <div class="road-item reveal"><span class="dot"></span>Automated compatibility runs against free ROMs</div>
+    <div class="road-item reveal"><span class="dot"></span>MMC5 CL-board split fine scrolling</div>
+    <div class="road-item reveal"><span class="dot"></span>MMC2 and MMC4 sprite-side CHR latches</div>
+    <div class="road-item reveal"><span class="dot"></span>PRG RAM write-protect enforcement</div>
+  </div>
+</section>
+<section id="notimplemented">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">09 / STATUS TABLE</div>
+      <h2 class="sec-title reveal">What is left.</h2>
+    </div>
+    <p class="sec-desc reveal">Working or not, stated plainly.</p>
+  </div>
+  <table class="ni">
+    <thead><tr><th>Area</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td class="area">Per-dot mid-scanline PPU</td><td class="status no">Not working</td><td>PPU composes a scanline at once</td></tr>
+      <tr><td class="area">Gamepad input</td><td class="status no">Not working</td><td>Keyboard only</td></tr>
+      <tr><td class="area">Rewind buffer</td><td class="status no">Not working</td><td>On roadmap</td></tr>
+      <tr><td class="area">NSF playback</td><td class="status no">Not working</td><td>On roadmap</td></tr>
+      <tr><td class="area">Netplay</td><td class="status no">Not working</td><td>On roadmap</td></tr>
+      <tr><td class="area">Dendy timing</td><td class="status no">Not working</td><td>PAL only for now</td></tr>
+      <tr><td class="area">PRG RAM write-protect</td><td class="status no">Not working</td><td>Stored, not enforced</td></tr>
+      <tr><td class="area">MMC5 CL fine scroll</td><td class="status partial">Partial</td><td>SL board path only</td></tr>
+      <tr><td class="area">MMC2 and MMC4 sprite latches</td><td class="status partial">Partial</td><td>Sprite rows 0 to 7 only</td></tr>
+      <tr><td class="area">Quattro Aladdin submapper</td><td class="status partial">Partial</td><td>Outer bits ignored</td></tr>
+      <tr><td class="area">GUI runtime</td><td class="status partial">Unverified</td><td>Compiled, not launched in headless VM</td></tr>
+      <tr><td class="area">Audio output</td><td class="status partial">Unverified</td><td>Not heard in headless VM</td></tr>
+      <tr><td class="area">Core emulation</td><td class="status ok">Working</td><td>53 tests pass, CI green</td></tr>
+      <tr><td class="area">Save states</td><td class="status ok">Working</td><td>Versioned, fingerprinted</td></tr>
+      <tr><td class="area">PAL timing</td><td class="status ok">Working</td><td>Header detected</td></tr>
+      <tr><td class="area">Expansion audio</td><td class="status ok">Working</td><td>MMC5 and VRC6</td></tr>
+    </tbody>
+  </table>
+</section>
+<footer>
+  <div class="footer-grid">
+    <div>
+      <div class="logo"><span class="dot"></span>NES CORE</div>
+      <p style="color:var(--muted);font-size:14px;margin-top:16px;max-width:420px">An independent, open-source NES and Famicom emulator written in Rust. Not affiliated with Nintendo.</p>
+    </div>
+    <div>
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/arpitgoswami/nes-core" target="_blank" rel="noopener">Repository</a></li>
+        <li><a href="https://github.com/arpitgoswami/nes-core/releases" target="_blank" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/arpitgoswami/nes-core/issues" target="_blank" rel="noopener">Issues</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Docs</h4>
+      <ul>
+        <li><a href="https://github.com/arpitgoswami/nes-core/blob/main/README.md" target="_blank" rel="noopener">README</a></li>
+        <li><a href="https://github.com/arpitgoswami/nes-core/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+        <li><a href="https://github.com/arpitgoswami/nes-core/blob/main/docs/architecture.md" target="_blank" rel="noopener">Architecture</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>MIT License. NES Core is not affiliated with Nintendo.</span>
+    <span>Built with Rust, egui, wgpu.</span>
+  </div>
+</footer>
+<script>
+const cursor=document.getElementById('cursor'),ring=document.getElementById('cursorRing');
+let mx=0,my=0,rx=0,ry=0;
+document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cursor.style.left=mx+'px';cursor.style.top=my+'px'});
+function loop(){rx+=(mx-rx)*.15;ry+=(my-ry)*.15;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(loop)}loop();
+document.querySelectorAll('a,button,.hover,.magnetic,.feat,.mapper,.road-item').forEach(el=>{
+  el.addEventListener('mouseenter',()=>document.body.classList.add('hovering'));
+  el.addEventListener('mouseleave',()=>document.body.classList.remove('hovering'));
+});
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  const pct=h.scrollTop/(h.scrollHeight-h.clientHeight)*100;
+  prog.style.width=pct+'%';
+});
+const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})
+},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+const counters=document.querySelectorAll('[data-target]');
+const cio=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      const el=e.target;const target=+el.dataset.target;let cur=0;const step=target/60;
+      const t=setInterval(()=>{cur+=step;if(cur>=target){cur=target;clearInterval(t)}el.textContent=Math.round(cur).toLocaleString()},16);
+      cio.unobserve(el);
+    }
+  })
+},{threshold:.5});
+counters.forEach(c=>cio.observe(c));
+const bars=document.querySelectorAll('.fill');
+const bio=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.style.width=e.target.dataset.width+'%';bio.unobserve(e.target)}})
+},{threshold:.3});
+bars.forEach(b=>bio.observe(b));
+const mesh=document.querySelector('.mesh');
+window.addEventListener('scroll',()=>{
+  const y=window.scrollY*.15;
+  if(mesh) mesh.style.transform='translateY('+y+'px)';
+});
+document.querySelectorAll('.magnetic').forEach(btn=>{
+  btn.addEventListener('mousemove',e=>{
+    const r=btn.getBoundingClientRect();
+    const x=e.clientX-r.left-r.width/2;
+    const y=e.clientY-r.top-r.height/2;
+    btn.style.transform='translate('+x*.2+'px,'+y*.2+'px)';
+  });
+  btn.addEventListener('mouseleave',()=>{btn.style.transform=''});
+});
+document.querySelectorAll('.feat').forEach(card=>{
+  card.addEventListener('mousemove',e=>{
+    const r=card.getBoundingClientRect();
+    const x=(e.clientX-r.left)/r.width-.5;
+    const y=(e.clientY-r.top)/r.height-.5;
+    card.style.transform='perspective(800px) rotateX('+(y*-6)+'deg) rotateY('+(x*6)+'deg) translateY(-4px)';
+  });
+  card.addEventListener('mouseleave',()=>{card.style.transform=''});
+});
+</script>
+</body>
+</html>
