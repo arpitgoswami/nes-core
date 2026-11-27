@@ -26,7 +26,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
 | APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
-| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5 (partial), 7 AxROM, 24/26 VRC6 (partial) |
+| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5 (partial), 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6 (partial), 66 GxROM, 71 Camerica |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
 | Save states | Implemented | Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes |
 | Settings and library | Implemented | Persisted in the per-user configuration directory |
@@ -58,6 +58,15 @@ stored but not enforced. VRC6 supports PRG/CHR banking, mirroring, scanline IRQs
 its two pulse channels plus sawtooth; the cycle-counting IRQ mode is not
 implemented, and the alternate `$B003` CHR banking modes are treated as 1 KB
 banks.
+
+MMC2 and MMC4 switch CHR banks from PPU fetches of tiles `$FD` and `$FE`, one
+latch per pattern-table half. The fetch that flips a latch still reads the old
+bank, and MMC4 additionally gates its PRG RAM through `$A001`. Sprite-side
+latch triggers do not fire because this PPU only fetches sprite rows 0-7.
+Camerica (71) switches the `$C000` 16 KB bank, keeps the last bank at `$8000`
+and honours Fire Hawk's one-screen mirroring register at `$9000`; the Quattro
+64 KB outer bank (mapper 232) is not implemented. Color Dreams (11) and GxROM
+(66) switch a 32 KB PRG bank and an 8 KB CHR bank.
 
 Expansion audio runs at CPU-cycle resolution alongside the APU. The MMC5 mix
 uses the same non-linear pulse DAC as the 2A03 and adds its PCM DAC as an
@@ -182,14 +191,14 @@ controller shift register and save states.
 
 It has **not** been validated against a broad library of commercial games, and
 no game-specific compatibility claims are made. Mapper coverage
-(0/1/2/3/4/5/7/24/26, with MMC5 and VRC6 partial) and the PPU's
+(0/1/2/3/4/5/7/9/10/11/24/26/66/71, with MMC5 and VRC6 partial) and the PPU's
 scanline-granular rendering are the main practical limits. Bug
 reports that include a legally redistributable test ROM are the most useful
 kind.
 
 ## Roadmap
 
-- More mappers (9, 10, 11, 66, 69, 71)
+- More mappers (69 Sunsoft FME-7, 88, 118, 119, 232 Quattro)
 - MMC5 fill-mode and ExRAM nametables, PCM read mode and finer split-screen timing
 - Per-dot PPU rendering for exact raster effects
 - Gamepad support (SDL/`gilrs`) and configurable controller ports

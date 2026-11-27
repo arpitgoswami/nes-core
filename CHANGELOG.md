@@ -4,6 +4,31 @@ All notable changes to NES Core are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-27
+
+### Added
+
+- MMC2 (mapper 9) and MMC4 (mapper 10): 8 KB and 16 KB PRG banking with the
+  last banks fixed, four 4 KB CHR registers, and latch-driven CHR switching
+  from PPU fetches of tiles `$FD` and `$FE`. A fetch that flips a latch still
+  reads the old bank, and MMC4 gates PRG RAM through `$A001`.
+- Color Dreams (mapper 11) and GxROM (mapper 66): 32 KB PRG and 8 KB CHR bank
+  switching.
+- Camerica (mapper 71): 16 KB switchable bank at `$C000` with the last bank at
+  `$8000`, and Fire Hawk's one-screen mirroring register at `$9000`.
+- `Cartridge::chr_read_ppu` so the PPU can report pattern fetches to mappers
+  without exposing mutable cartridge state to the rendering loop.
+- Tests for MMC2/MMC4 PRG and CHR latch behaviour, MMC4 PRG RAM gating, Color
+  Dreams and GxROM banking, and Camerica banking plus mirroring.
+
+### Known limitations
+
+- The MMC2/MMC4 latches are not triggered by sprite pattern fetches, because
+  the PPU only fetches sprite rows 0-7 and the trigger sits in row 8.
+- Camerica's Quattro 64 KB outer bank (mapper 232) is not implemented.
+- Mapper 71 uses the header's fixed mirroring until a Fire Hawk `$9000` write
+  selects one-screen mirroring.
+
 ## [0.3.0] - 2026-11-27
 
 ### Added

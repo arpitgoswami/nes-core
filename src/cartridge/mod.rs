@@ -336,6 +336,19 @@ impl Cartridge {
         self.chr_memory[offset]
     }
 
+    /// Pattern fetch made by the PPU while rendering. MMC2/MMC4 latch their CHR
+    /// banks from these fetches, and the fetch that flips a latch returns the
+    /// old bank, so the value is read before the mapper is told about it.
+    pub fn chr_read_ppu(&mut self, addr: u16, sprite: bool) -> u8 {
+        let value = if sprite {
+            self.chr_read_sprite(addr)
+        } else {
+            self.chr_read(addr)
+        };
+        self.mapper.notify_ppu_read(addr);
+        value
+    }
+
     /// Pattern fetch made on behalf of sprites; MMC5 keeps separate banks for
     /// sprite and background fetches.
     pub fn chr_read_sprite(&self, addr: u16) -> u8 {
@@ -373,6 +386,36 @@ impl Cartridge {
                 }
             }
             Mapper::Cnrom { .. } => usize::from(addr - 0x8000) % prg_len,
+            Mapper::ColorDreams { prg, .. } | Mapper::Gxrom { prg, .. } => {
+                let banks = (prg_len / 0x8000).max(1);
+                (usize::from(*prg) % banks) * 0x8000 + usize::from(addr - 0x8000)
+            }
+            Mapper::Camerica { bank, .. } => {
+                let banks = (prg_len / 0x2000).max(1);
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                let bank = if slot < 2 {
+                    banks.saturating_sub(2) + slot
+                } else {
+                    usize::from(*bank) * 2 + slot - 2
+                };
+                (bank % banks) * 0x2000 + usize::from(addr & 0x1FFF)
+            }
+            Mapper::Mmc2(state) => {
+                let banks = (prg_len / 0x2000).max(1);
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                let bank = if state.variant_4 {
+                    if slot < 2 {
+                        usize::from(state.prg_bank & 0x0F) * 2 + slot
+                    } else {
+                        banks.saturating_sub(2) + slot - 2
+                    }
+                } else if slot == 0 {
+                    usize::from(state.prg_bank & 0x07)
+                } else {
+                    banks.saturating_sub(3) + slot - 1
+                };
+                (bank % banks) * 0x2000 + usize::from(addr & 0x1FFF)
+            }
             Mapper::Mmc1(state) => {
                 let mode = (state.control >> 2) & 0x03;
                 let bank = usize::from(state.prg_bank & 0x0F);
@@ -478,6 +521,17 @@ impl Cartridge {
             Mapper::Cnrom { bank } => {
                 let banks_8k = (len / 0x2000).max(1);
                 (usize::from(*bank) % banks_8k) * 0x2000 + addr
+            }
+            Mapper::ColorDreams { chr, .. } | Mapper::Gxrom { chr, .. } => {
+                let banks_8k = (len / 0x2000).max(1);
+                (usize::from(*chr) % banks_8k) * 0x2000 + addr
+            }
+            Mapper::Camerica { .. } => addr % len,
+            Mapper::Mmc2(state) => {
+                let banks_4k = (len / 0x1000).max(1);
+                let half = usize::from(addr >= 0x1000);
+                let bank = state.chr_banks[half * 2 + usize::from(state.latch[half])];
+                (usize::from(bank) % banks_4k) * 0x1000 + (addr & 0x0FFF)
             }
             Mapper::Mmc1(state) => {
                 if state.control & 0x10 == 0 {

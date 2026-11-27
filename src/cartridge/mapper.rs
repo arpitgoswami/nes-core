@@ -7,7 +7,7 @@ use super::Mirroring;
 
 /// Mappers implemented by NES Core. Support is listed in the README and is only
 /// claimed for titles that have actually been exercised.
-pub const SUPPORTED_MAPPERS: [u16; 9] = [0, 1, 2, 3, 4, 5, 7, 24, 26];
+pub const SUPPORTED_MAPPERS: [u16; 14] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66, 71];
 
 /// MMC5 keeps 1 KB of internal extended RAM mirrored at `$5C00-$5FFF`.
 pub const MMC5_EXRAM_LEN: usize = 1024;
@@ -31,6 +31,36 @@ impl Default for Mmc1State {
             chr_bank0: 0,
             chr_bank1: 0,
             prg_bank: 0,
+        }
+    }
+}
+
+/// MMC2 (mapper 9) and MMC4 (mapper 10). Both switch CHR banks from PPU
+/// fetches of tiles $FD and $FE; the two halves of the pattern table each have
+/// a bank for every latch value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Mmc2State {
+    pub prg_bank: u8,
+    /// CHR banks in register order: `$B000`, `$C000`, `$D000`, `$E000`.
+    pub chr_banks: [u8; 4],
+    /// Latch per pattern-table half: 0 selects the $FD bank, 1 the $FE bank.
+    pub latch: [u8; 2],
+    pub mirroring: Mirroring,
+    /// MMC4 only: `$A001` bit 0 gates PRG RAM.
+    pub prg_ram_enabled: bool,
+    /// True for MMC4, which switches 16 KB of PRG instead of 8 KB.
+    pub variant_4: bool,
+}
+
+impl Default for Mmc2State {
+    fn default() -> Self {
+        Self {
+            prg_bank: 0,
+            chr_banks: [0; 4],
+            latch: [1; 2],
+            mirroring: Mirroring::Vertical,
+            prg_ram_enabled: true,
+            variant_4: false,
         }
     }
 }
@@ -295,21 +325,54 @@ pub enum MapperState {
         bank: u8,
     },
     Mmc1(Mmc1State),
+    Mmc2(Mmc2State),
     Mmc3(Mmc3State),
     Mmc5(Mmc5State),
     Vrc6(Vrc6State),
+    ColorDreams {
+        prg: u8,
+        chr: u8,
+    },
+    Gxrom {
+        prg: u8,
+        chr: u8,
+    },
+    Camerica {
+        bank: u8,
+        single_screen: Option<bool>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum Mapper {
     Nrom,
-    Uxrom { bank: u8 },
-    Axrom { bank: u8, upper: bool },
-    Cnrom { bank: u8 },
+    Uxrom {
+        bank: u8,
+    },
+    Axrom {
+        bank: u8,
+        upper: bool,
+    },
+    Cnrom {
+        bank: u8,
+    },
     Mmc1(Mmc1State),
+    Mmc2(Mmc2State),
     Mmc3(Mmc3State),
     Mmc5(Mmc5State),
     Vrc6(Vrc6State),
+    ColorDreams {
+        prg: u8,
+        chr: u8,
+    },
+    Gxrom {
+        prg: u8,
+        chr: u8,
+    },
+    Camerica {
+        bank: u8,
+        single_screen: Option<bool>,
+    },
 }
 
 impl Mapper {
@@ -319,6 +382,12 @@ impl Mapper {
             2 => Mapper::Uxrom { bank: 0 },
             3 => Mapper::Cnrom { bank: 0 },
             4 => Mapper::Mmc3(Mmc3State::default()),
+            9 => Mapper::Mmc2(Mmc2State::default()),
+            10 => Mapper::Mmc2(Mmc2State {
+                variant_4: true,
+                ..Mmc2State::default()
+            }),
+            11 => Mapper::ColorDreams { prg: 0, chr: 0 },
             5 => Mapper::Mmc5(Mmc5State::default()),
             7 => Mapper::Axrom {
                 bank: 0,
@@ -329,6 +398,11 @@ impl Mapper {
                 variant_b: true,
                 ..Vrc6State::default()
             }),
+            66 => Mapper::Gxrom { prg: 0, chr: 0 },
+            71 => Mapper::Camerica {
+                bank: 0,
+                single_screen: None,
+            },
             _ => Mapper::Nrom,
         }
     }
@@ -340,6 +414,16 @@ impl Mapper {
             Mapper::Uxrom { .. } => 2,
             Mapper::Cnrom { .. } => 3,
             Mapper::Mmc3(_) => 4,
+            Mapper::Mmc2(state) => {
+                if state.variant_4 {
+                    10
+                } else {
+                    9
+                }
+            }
+            Mapper::ColorDreams { .. } => 11,
+            Mapper::Gxrom { .. } => 66,
+            Mapper::Camerica { .. } => 71,
             Mapper::Mmc5(_) => 5,
             Mapper::Axrom { .. } => 7,
             Mapper::Vrc6(state) => {
@@ -359,6 +443,16 @@ impl Mapper {
             Mapper::Uxrom { .. } => "UxROM (2)",
             Mapper::Cnrom { .. } => "CNROM (3)",
             Mapper::Mmc3(_) => "MMC3 (4)",
+            Mapper::Mmc2(state) => {
+                if state.variant_4 {
+                    "MMC4 (10)"
+                } else {
+                    "MMC2 (9)"
+                }
+            }
+            Mapper::ColorDreams { .. } => "Color Dreams (11)",
+            Mapper::Gxrom { .. } => "GxROM (66)",
+            Mapper::Camerica { .. } => "Camerica (71)",
             Mapper::Mmc5(_) => "MMC5 (5)",
             Mapper::Axrom { .. } => "AxROM (7)",
             Mapper::Vrc6(state) => {
@@ -442,6 +536,50 @@ impl Mapper {
                     }
                     0xE000 => state.irq_enabled = true,
                     _ => {}
+                }
+            }
+            Mapper::Mmc2(state) => match addr & 0xF000 {
+                0xA000 => {
+                    if state.variant_4 {
+                        if addr & 1 == 0 {
+                            state.prg_bank = value & 0x0F;
+                        } else {
+                            state.prg_ram_enabled = value & 0x01 != 0;
+                        }
+                    } else {
+                        state.prg_bank = value & 0x0F;
+                    }
+                }
+                0xB000 => state.chr_banks[0] = value & 0x1F,
+                0xC000 => state.chr_banks[1] = value & 0x1F,
+                0xD000 => state.chr_banks[2] = value & 0x1F,
+                0xE000 => state.chr_banks[3] = value & 0x1F,
+                0xF000 => {
+                    state.mirroring = if value & 1 == 0 {
+                        Mirroring::Vertical
+                    } else {
+                        Mirroring::Horizontal
+                    };
+                }
+                _ => {}
+            },
+            Mapper::ColorDreams { prg, chr } => {
+                *prg = value & 0x03;
+                *chr = (value >> 4) & 0x0F;
+            }
+            Mapper::Gxrom { prg, chr } => {
+                *prg = (value >> 4) & 0x03;
+                *chr = value & 0x03;
+            }
+            Mapper::Camerica {
+                bank,
+                single_screen,
+            } => {
+                if addr & 0xF000 == 0x9000 {
+                    // Fire Hawk's BF9097 selects one-screen mirroring here.
+                    *single_screen = Some(value & 0x10 != 0);
+                } else if addr >= 0xC000 {
+                    *bank = value & 0x0F;
                 }
             }
             // MMC5 keeps its registers in `$5000-$5FFF`; see `write_register`.
@@ -559,6 +697,14 @@ impl Mapper {
                 0x0C => Mirroring::OneScreenUpper,
                 _ => Mirroring::Vertical,
             }),
+            Mapper::Mmc2(state) => Some(state.mirroring),
+            Mapper::Camerica { single_screen, .. } => single_screen.map(|upper| {
+                if upper {
+                    Mirroring::OneScreenUpper
+                } else {
+                    Mirroring::OneScreenLower
+                }
+            }),
             // MMC5 nametables are mapped per table in `Cartridge::nametable_index`.
             _ => None,
         }
@@ -584,7 +730,28 @@ impl Mapper {
     }
 
     pub fn prg_ram_disabled(&self) -> bool {
-        false
+        matches!(self, Mapper::Mmc2(state) if state.variant_4 && !state.prg_ram_enabled)
+    }
+
+    /// PPU pattern fetches drive the MMC2/MMC4 CHR latches. The fetch that
+    /// flips a latch still reads the old bank, so the cart reads first and
+    /// calls this afterwards.
+    pub fn notify_ppu_read(&mut self, addr: u16) {
+        let Mapper::Mmc2(state) = self else {
+            return;
+        };
+        let low = addr & 0x0FFF;
+        let half = usize::from(addr & 0x1000 != 0);
+        // MMC2 only watches the exact $0FD8/$0FE8 fetches for latch 0; MMC4
+        // watches the whole high-bitplane range on both halves.
+        let seen = if state.variant_4 || half == 1 {
+            matches!(low & 0x0FF8, 0x0FD8 | 0x0FE8)
+        } else {
+            matches!(low, 0x0FD8 | 0x0FE8)
+        };
+        if seen {
+            state.latch[half] = u8::from(low >= 0x0FE0);
+        }
     }
 
     /// Advances expansion audio by one CPU cycle.
@@ -626,9 +793,25 @@ impl Mapper {
             },
             Mapper::Cnrom { bank } => MapperState::Cnrom { bank: *bank },
             Mapper::Mmc1(state) => MapperState::Mmc1(state.clone()),
+            Mapper::Mmc2(state) => MapperState::Mmc2(state.clone()),
             Mapper::Mmc3(state) => MapperState::Mmc3(state.clone()),
             Mapper::Mmc5(state) => MapperState::Mmc5(state.clone()),
             Mapper::Vrc6(state) => MapperState::Vrc6(state.clone()),
+            Mapper::ColorDreams { prg, chr } => MapperState::ColorDreams {
+                prg: *prg,
+                chr: *chr,
+            },
+            Mapper::Gxrom { prg, chr } => MapperState::Gxrom {
+                prg: *prg,
+                chr: *chr,
+            },
+            Mapper::Camerica {
+                bank,
+                single_screen,
+            } => MapperState::Camerica {
+                bank: *bank,
+                single_screen: *single_screen,
+            },
         }
     }
 
@@ -641,6 +824,7 @@ impl Mapper {
             }
             (Mapper::Cnrom { bank }, MapperState::Cnrom { bank: b }) => *bank = b,
             (Mapper::Mmc1(current), MapperState::Mmc1(saved)) => *current = saved,
+            (Mapper::Mmc2(current), MapperState::Mmc2(saved)) => *current = saved,
             (Mapper::Mmc3(current), MapperState::Mmc3(saved)) => *current = saved,
             (Mapper::Mmc5(current), MapperState::Mmc5(mut saved)) => {
                 if saved.exram.len() != MMC5_EXRAM_LEN {
@@ -651,6 +835,27 @@ impl Mapper {
             (Mapper::Vrc6(current), MapperState::Vrc6(mut saved)) => {
                 saved.variant_b = current.variant_b;
                 *current = saved;
+            }
+            (Mapper::ColorDreams { prg, chr }, MapperState::ColorDreams { prg: p, chr: c }) => {
+                *prg = p;
+                *chr = c;
+            }
+            (Mapper::Gxrom { prg, chr }, MapperState::Gxrom { prg: p, chr: c }) => {
+                *prg = p;
+                *chr = c;
+            }
+            (
+                Mapper::Camerica {
+                    bank,
+                    single_screen,
+                },
+                MapperState::Camerica {
+                    bank: b,
+                    single_screen: s,
+                },
+            ) => {
+                *bank = b;
+                *single_screen = s;
             }
             (Mapper::Nrom, MapperState::Nrom) => {}
             _ => {}

@@ -68,8 +68,17 @@ header declares no CHR banks. Nametable mirroring is resolved by the cartridge
 without special cases in the PPU.
 
 Implemented mappers: NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), MMC5
-(5), AxROM (7) and VRC6 (24/26). MMC3, MMC5 and VRC6 IRQ counters are clocked
-once per rendered scanline, which approximates the hardware's A12 filter.
+(5), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), VRC6 (24/26), GxROM
+(66) and Camerica (71). MMC3, MMC5 and VRC6 IRQ counters are clocked once per
+rendered scanline, which approximates the hardware's A12 filter.
+
+MMC2 and MMC4 switch CHR banks from PPU fetches of tiles `$FD` and `$FE`. The
+PPU renders through `Cartridge::chr_read_ppu`, which reads the old bank and
+then reports the fetch to the mapper, so the fetch that flips a latch still
+returns the previous bank. MMC2 responds to the exact `$0FD8`/`$0FE8` fetches
+and MMC4 to the whole high-bitplane range on both pattern-table halves. Sprite
+pattern fetches take the same path, but because this PPU only reads sprite rows
+0-7 the sprite-side latch triggers do not fire.
 
 MMC5 owns a register window at `$5000-$5FFF`: PRG and CHR banking, 64 KB of
 banked PRG RAM, the 1 KB ExRAM at `$5C00-$5FFF`, per-table nametable mapping,

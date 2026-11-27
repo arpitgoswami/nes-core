@@ -799,9 +799,13 @@ impl NesApp {
                             .color(TEXT),
                     );
                     ui.label(
-                        RichText::new("0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 7 AxROM")
-                            .size(12.0)
-                            .color(MUTED),
+                        RichText::new(
+                            "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · \
+                             9 MMC2 · 10 MMC4 · 11 Color Dreams · 24/26 VRC6 · 66 GxROM · \
+                             71 Camerica",
+                        )
+                        .size(12.0)
+                        .color(MUTED),
                     );
                 });
 
@@ -1455,7 +1459,8 @@ impl NesApp {
                 (
                     "Cartridges",
                     "iNES and NES 2.0 headers, PRG/CHR mapping, PRG RAM and battery-backed \
-                     RAM in memory, and mappers 0, 1, 2, 3, 4 and 7.",
+                     RAM in memory, and mappers 0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26,\
+                     66 and 71.",
                 ),
                 (
                     "Desktop features",

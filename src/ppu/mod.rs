@@ -380,15 +380,19 @@ impl Ppu {
                     }
                 }
                 let pattern_addr = pattern_base + row as u16;
-                let cart = self.cart.borrow();
+                let mut cart = self.cart.borrow_mut();
                 let (low, high) = if direct {
                     (
                         cart.chr_read_direct(pattern_addr),
                         cart.chr_read_direct(pattern_addr + 8),
                     )
                 } else {
-                    (cart.chr_read(pattern_addr), cart.chr_read(pattern_addr + 8))
+                    (
+                        cart.chr_read_ppu(pattern_addr, false),
+                        cart.chr_read_ppu(pattern_addr + 8, false),
+                    )
                 };
+                drop(cart);
                 let bit = 7 - (scrolled % 8);
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
                 bg_color_index[x] = pixel;
@@ -447,8 +451,8 @@ impl Ppu {
                 };
                 let row_in_tile = row % 8;
                 let addr = pattern_table + u16::from(tile_index) * 16 + row_in_tile as u16;
-                let low = self.cart.borrow().chr_read_sprite(addr);
-                let high = self.cart.borrow().chr_read_sprite(addr + 8);
+                let low = self.cart.borrow_mut().chr_read_ppu(addr, true);
+                let high = self.cart.borrow_mut().chr_read_ppu(addr + 8, true);
                 let palette = 0x10 + (attr & 0x03) * 4;
                 let behind_bg = attr & 0x20 != 0;
                 for col in 0..8usize {

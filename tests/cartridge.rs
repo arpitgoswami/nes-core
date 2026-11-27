@@ -42,10 +42,10 @@ fn rejects_truncated_prg() {
 
 #[test]
 fn rejects_unsupported_mapper() {
-    let rom = ines(&vec![0; 16384], &[], 66, 0);
+    let rom = ines(&vec![0; 16384], &[], 69, 0);
     assert_eq!(
         Cartridge::from_bytes(&rom).unwrap_err(),
-        RomError::UnsupportedMapper(66)
+        RomError::UnsupportedMapper(69)
     );
 }
 
@@ -386,4 +386,116 @@ fn vrc6_expansion_audio_outputs_pulses_and_saw() {
         cart.clock_audio();
     }
     assert_eq!(cart.audio_output(), halted);
+}
+
+#[test]
+fn mmc2_switches_prg_and_latches_chr_banks() {
+    let mut prg = vec![0u8; 128 * 1024];
+    for bank in 0..16usize {
+        prg[bank * 0x2000] = bank as u8 + 1;
+    }
+    let mut chr = vec![0u8; 32 * 1024];
+    for bank in 0..8usize {
+        chr[bank * 0x1000] = 0x80 | bank as u8;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &chr, 9, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "MMC2 (9)");
+
+    // Bank 0 sits at $8000 and the last three 8 KB banks are fixed above it.
+    assert_eq!(cart.cpu_read(0x8000), 1);
+    assert_eq!(cart.cpu_read(0xA000), 14);
+    assert_eq!(cart.cpu_read(0xE000), 16);
+    cart.cpu_write(0xA000, 3);
+    assert_eq!(cart.cpu_read(0x8000), 4);
+
+    cart.cpu_write(0xB000, 1); // $FD bank for PPU $0000
+    cart.cpu_write(0xC000, 2); // $FE bank for PPU $0000
+    cart.cpu_write(0xD000, 3); // $FD bank for PPU $1000
+    cart.cpu_write(0xE000, 4); // $FE bank for PPU $1000
+
+    // The latch starts on $FE.
+    assert_eq!(cart.chr_read(0x0000), 0x82);
+    assert_eq!(cart.chr_read(0x1000), 0x84);
+
+    // A PPU fetch of tile $FD's high bitplane flips latch 0 to $FD.
+    cart.chr_read_ppu(0x0FD8, false);
+    assert_eq!(cart.chr_read(0x0000), 0x81);
+    cart.chr_read_ppu(0x1FD8, false);
+    assert_eq!(cart.chr_read(0x1000), 0x83);
+
+    cart.cpu_write(0xF000, 1);
+    assert_eq!(cart.mirroring, Mirroring::Horizontal);
+}
+
+#[test]
+fn mmc4_switches_16k_prg_banks_and_prg_ram() {
+    let mut prg = vec![0u8; 128 * 1024];
+    for bank in 0..16usize {
+        prg[bank * 0x2000] = bank as u8 + 1;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 10, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "MMC4 (10)");
+
+    assert_eq!(cart.cpu_read(0xC000), 15);
+    cart.cpu_write(0xA000, 2);
+    assert_eq!(cart.cpu_read(0x8000), 5);
+    assert_eq!(cart.cpu_read(0xA000), 6);
+
+    cart.cpu_write(0x6000, 0x77);
+    cart.cpu_write(0xA001, 0);
+    assert_eq!(cart.cpu_read(0x6000), 0);
+    cart.cpu_write(0xA001, 1);
+    assert_eq!(cart.cpu_read(0x6000), 0x77);
+}
+
+#[test]
+fn color_dreams_switches_32k_prg_and_chr() {
+    let mut prg = vec![0u8; 128 * 1024];
+    for bank in 0..4usize {
+        prg[bank * 0x8000] = 0x10 + bank as u8;
+    }
+    let mut chr = vec![0u8; 32 * 1024];
+    for bank in 0..4usize {
+        chr[bank * 0x2000] = 0x40 + bank as u8;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &chr, 11, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "Color Dreams (11)");
+    cart.cpu_write(0x8000, 0x21);
+    assert_eq!(cart.cpu_read(0x8000), 0x11);
+    assert_eq!(cart.chr_read(0x0000), 0x42);
+}
+
+#[test]
+fn gxrom_switches_prg_and_chr_banks() {
+    let mut prg = vec![0u8; 128 * 1024];
+    for bank in 0..4usize {
+        prg[bank * 0x8000] = 0x50 + bank as u8;
+    }
+    let mut chr = vec![0u8; 32 * 1024];
+    for bank in 0..4usize {
+        chr[bank * 0x2000] = 0x60 + bank as u8;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &chr, 66, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "GxROM (66)");
+    cart.cpu_write(0x8000, 0x12);
+    assert_eq!(cart.cpu_read(0x8000), 0x51);
+    assert_eq!(cart.chr_read(0x0000), 0x62);
+}
+
+#[test]
+fn camerica_switches_16k_banks_and_fire_hawk_mirroring() {
+    let mut prg = vec![0u8; 64 * 1024];
+    for bank in 0..4usize {
+        prg[bank * 0x4000] = 0x20 + bank as u8;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 71, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "Camerica (71)");
+
+    // $8000 holds the last 16 KB bank; $C000 is switchable.
+    assert_eq!(cart.cpu_read(0x8000), 0x23);
+    cart.cpu_write(0xC000, 1);
+    assert_eq!(cart.cpu_read(0xC000), 0x21);
+
+    cart.cpu_write(0x9000, 0x10);
+    assert_eq!(cart.mirroring, Mirroring::OneScreenUpper);
 }
