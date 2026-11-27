@@ -267,20 +267,43 @@ impl Ppu {
         }
 
         let pre_render = self.total_scanlines() - 1;
+        let rendering = self.rendering_enabled();
+
         if scanline == pre_render && dot == 1 {
             self.state.status &= !(STATUS_VBLANK | STATUS_SPRITE0 | STATUS_OVERFLOW);
         }
 
         if scanline < 240 && dot == 0 {
             self.render_scanline(scanline as usize);
-            self.increment_y();
+            if rendering {
+                self.increment_y();
+            }
         }
 
-        if self.rendering_enabled() && (scanline < 240 || scanline == pre_render) && dot == 260 {
+        // Horizontal bits of t are copied into v at dot 257 of every rendering line.
+        if rendering && (scanline < 240 || scanline == pre_render) && dot == 257 {
+            self.state.v = (self.state.v & !0x041F) | (self.state.t & 0x041F);
+        }
+
+        // Vertical bits of t are copied into v throughout dots 280-304 of the pre-render line.
+        if rendering && scanline == pre_render && (280..=304).contains(&dot) {
+            self.state.v = (self.state.v & !0x7BE0) | (self.state.t & 0x7BE0);
+        }
+
+        if rendering && (scanline < 240 || scanline == pre_render) && dot == 260 {
             self.cart.borrow_mut().on_scanline();
         }
 
         self.state.dot += 1;
+        // NTSC skips the last dot of the pre-render line on odd frames while rendering.
+        if !self.pal
+            && rendering
+            && scanline == pre_render
+            && dot == 339
+            && self.state.frame % 2 == 1
+        {
+            self.state.dot += 1;
+        }
         if self.state.dot > 340 {
             self.state.dot = 0;
             self.state.scanline += 1;

@@ -113,3 +113,38 @@ fn mmc5_vertical_split_draws_exram_tiles() {
     assert_eq!(pixel(&ppu, 128), rgba(PALETTE_RGB[0x21]));
     assert_eq!(pixel(&ppu, 255), rgba(PALETTE_RGB[0x21]));
 }
+
+/// $2005 scroll must reach the renderer through the t -> v copies.
+#[test]
+fn scroll_written_through_2005_moves_the_background() {
+    let prg = vec![0u8; 16384];
+    let mut chr = vec![0u8; 8192];
+    chr[16..24].fill(0xFF); // tile 1: solid colour 1
+    let cart = Rc::new(RefCell::new(
+        Cartridge::from_bytes(&ines(&prg, &chr, 0, 1)).unwrap(),
+    ));
+    let mut ppu = Ppu::new(cart);
+    // Tile 1 at nametable 0, row 0, column 1.
+    ppu.write_register(6, 0x20);
+    ppu.write_register(6, 0x01);
+    ppu.write_register(7, 1);
+    // Palette 0, colour 1.
+    ppu.write_register(6, 0x3F);
+    ppu.write_register(6, 0x01);
+    ppu.write_register(7, 0x16);
+    ppu.write_register(0, 0); // like real games: reselect nametable 0 after VRAM setup
+    // Scroll X by 8 pixels, nothing else, then enable the background.
+    ppu.write_register(5, 8);
+    ppu.write_register(5, 0);
+    ppu.write_register(1, 0x0A);
+    for _ in 0..(262 * 341 * 2) {
+        ppu.step();
+    }
+    let expected = PALETTE_RGB[0x16];
+    let px = &ppu.framebuffer[0..4];
+    assert_eq!(
+        (px[0], px[1], px[2]),
+        expected,
+        "tile at column 1 should be scrolled to x = 0"
+    );
+}
