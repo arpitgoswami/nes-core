@@ -24,7 +24,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | CPU (2A03) | Implemented | All official 6502 instructions, common unofficial instructions, addressing modes, page-cross and branch cycle penalties, NMI/IRQ/reset, OAM/DMC DMA stalls |
 | Memory bus | Implemented | 2 KB RAM mirroring, PPU/APU/controller registers, cartridge mapping |
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
-| APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz |
+| APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
 | Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5 (partial), 7 AxROM, 24/26 VRC6 (partial) |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
@@ -33,7 +33,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | GUI | Implemented | Dark desktop UI with library, game view, settings, save states, achievements, about |
 | Gamepad input | Not implemented | Keyboard only in this build |
 | PAL timing | Not implemented | NTSC timing (60.0988 Hz) only |
-| Rewind/netplay/NSF/expansion audio | Not implemented | On the roadmap |
+| Rewind/netplay/NSF playback | Not implemented | On the roadmap |
 
 ### Accuracy boundaries
 
@@ -44,15 +44,25 @@ and sprite-0 hit detection are approximated. MMC3's IRQ is clocked once per
 rendered scanline rather than from an exact A12 filter. These limits are why NES
 Core does not claim full NES compatibility.
 
-MMC5 support is deliberately partial. PRG banking, 1 KB CHR banking with
-separate sprite and background banks, banked PRG RAM, the 8x8 multiplier, the
-scanline IRQ and `$5105` nametable mapping work. MMC5 expansion audio, vertical
-split-screen rendering, ExRAM extended attributes and fill-mode nametables are
-not implemented, CHR banking is always evaluated at 1 KB granularity, and the
-PRG RAM write-protect registers are stored but not enforced. VRC6 supports
-PRG/CHR banking, mirroring and scanline IRQs; its expansion audio and the
-cycle-counting IRQ mode are not implemented, and the alternate `$B003` CHR
-banking modes are treated as 1 KB banks.
+MMC5 support is still deliberately partial, but most of the board now works.
+PRG banking, 1 KB CHR banking with separate sprite and background banks, banked
+PRG RAM, the 8x8 multiplier, the scanline IRQ, `$5105` nametable mapping, ExRAM
+extended attributes, vertical split-screen and expansion audio are implemented.
+Extended attributes give every background tile its own palette and 4 KB CHR
+bank, and the split region takes its tiles, attributes and pattern rows from
+ExRAM. Fill-mode nametables, ExRAM used as a nametable, the PCM read mode and
+the SL board's split fine-scroll are not implemented, CHR banking is still
+evaluated at 1 KB granularity, background substitution is applied per screen
+tile rather than per PPU fetch, and the PRG RAM write-protect registers are
+stored but not enforced. VRC6 supports PRG/CHR banking, mirroring, scanline IRQs and
+its two pulse channels plus sawtooth; the cycle-counting IRQ mode is not
+implemented, and the alternate `$B003` CHR banking modes are treated as 1 KB
+banks.
+
+Expansion audio runs at CPU-cycle resolution alongside the APU. The MMC5 mix
+uses the same non-linear pulse DAC as the 2A03 and adds its PCM DAC as an
+AC-coupled signal; VRC6's linear 6-bit DAC is scaled to a comparable level.
+Both are approximations of the analogue output stage, not measured models.
 
 ## Screenshots
 
@@ -180,7 +190,7 @@ kind.
 ## Roadmap
 
 - More mappers (9, 10, 11, 66, 69, 71)
-- MMC5 split-screen and ExRAM attributes; MMC5/VRC6 expansion audio
+- MMC5 fill-mode and ExRAM nametables, PCM read mode and finer split-screen timing
 - Per-dot PPU rendering for exact raster effects
 - Gamepad support (SDL/`gilrs`) and configurable controller ports
 - PAL/Dendy timing modes

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::audio::{Mmc5Audio, Vrc6Audio};
 use super::Mirroring;
 
 /// Mappers implemented by NES Core. Support is listed in the README and is only
@@ -105,6 +106,7 @@ pub struct Mmc5State {
     pub scanline: u8,
     pub in_frame: bool,
     pub exram: Vec<u8>,
+    pub audio: Mmc5Audio,
 }
 
 impl Default for Mmc5State {
@@ -132,6 +134,7 @@ impl Default for Mmc5State {
             scanline: 0,
             in_frame: false,
             exram: vec![0; MMC5_EXRAM_LEN],
+            audio: Mmc5Audio::default(),
         }
     }
 }
@@ -150,6 +153,83 @@ impl Mmc5State {
     }
 }
 
+/// Background substitution data for one visible scanline. The PPU copies this
+/// out of the cartridge so it can render without holding a borrow.
+#[derive(Debug, Clone)]
+pub struct Mmc5Render {
+    pub split_enabled: bool,
+    pub split_left: bool,
+    pub split_threshold: usize,
+    pub split_scroll: u8,
+    pub split_bank: u8,
+    pub extended_attributes: bool,
+    pub upper_chr: u8,
+    pub exram: [u8; MMC5_EXRAM_LEN],
+}
+
+impl Mmc5Render {
+    fn from_state(state: &Mmc5State) -> Self {
+        let mut exram = [0u8; MMC5_EXRAM_LEN];
+        let len = state.exram.len().min(MMC5_EXRAM_LEN);
+        exram[..len].copy_from_slice(&state.exram[..len]);
+        Self {
+            // RAM modes %10 and %11 disable split screen.
+            split_enabled: state.split_control & 0x80 != 0 && state.exram_mode & 0x02 == 0,
+            split_left: state.split_control & 0x40 == 0,
+            split_threshold: usize::from(state.split_control & 0x3F),
+            split_scroll: state.split_scroll,
+            split_bank: state.split_bank,
+            extended_attributes: state.exram_mode & 0x03 == 0x01,
+            upper_chr: state.upper_chr,
+            exram,
+        }
+    }
+
+    /// Whether a screen tile column falls inside the split region.
+    pub fn split_region(&self, screen_tile: usize) -> bool {
+        if !self.split_enabled {
+            return false;
+        }
+        if self.split_left {
+            screen_tile < self.split_threshold
+        } else {
+            screen_tile >= self.split_threshold
+        }
+    }
+
+    fn split_row(&self, scanline: usize) -> usize {
+        (usize::from(self.split_scroll) + scanline) % 240
+    }
+
+    /// Tile byte and palette for the split region; the split nametable is ExRAM
+    /// with the usual 960 bytes of tiles followed by 64 bytes of attributes.
+    pub fn split_tile(&self, scanline: usize, column: usize) -> (u8, u8) {
+        let row = self.split_row(scanline);
+        let column = column.min(31);
+        let tile = self.exram[(row / 8) * 32 + column];
+        let attribute = self.exram[960 + (row / 4).min(7) * 8 + column / 4];
+        let shift = ((row % 4) / 2) * 4 + ((column % 4) / 2) * 2;
+        (tile, (attribute >> shift) & 0x03)
+    }
+
+    /// Row inside the tile, taken from the split counter rather than PPU fine Y.
+    pub fn split_fine_row(&self, scanline: usize) -> usize {
+        self.split_row(scanline) & 7
+    }
+
+    /// Split region CHR uses one 4 KB bank from `$5202`.
+    pub fn split_pattern_base(&self, tile: u8) -> u16 {
+        u16::from(self.split_bank) * 0x1000 + u16::from(tile) * 16
+    }
+
+    /// Extended attribute palette and 4 KB CHR bank, 1-screen mirrored.
+    pub fn extended_attribute(&self, coarse_y: usize, tile_x: usize) -> (u8, u16) {
+        let attribute = self.exram[coarse_y * 32 + tile_x];
+        let bank = u16::from(attribute & 0x3F) | (u16::from(self.upper_chr & 0x03) << 6);
+        (attribute >> 6, bank)
+    }
+}
+
 /// VRC6 registers shared by the VRC6a (mapper 24) and VRC6b (mapper 26) boards.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vrc6State {
@@ -164,6 +244,7 @@ pub struct Vrc6State {
     pub irq_mode_cycle: bool,
     pub irq_enabled: bool,
     pub irq_pending: bool,
+    pub audio: Vrc6Audio,
 }
 
 impl Default for Vrc6State {
@@ -179,6 +260,7 @@ impl Default for Vrc6State {
             irq_mode_cycle: false,
             irq_enabled: false,
             irq_pending: false,
+            audio: Vrc6Audio::default(),
         }
     }
 }
@@ -372,9 +454,9 @@ impl Mapper {
                 });
                 match addr & 0xF000 {
                     0x8000 => state.prg_16k = value & 0x0F,
+                    0x9000 | 0xA000 => state.audio.write(addr & 0xF000, reg, value),
                     0xB000 if reg == 3 => state.banking = value,
-                    // `$B000-$B002` and `$9000`/`$A000` are expansion audio and
-                    // are accepted without affecting banking.
+                    0xB000 => state.audio.write(0xB000, reg, value),
                     0xC000 => state.prg_8k = value & 0x3F,
                     0xD000 => state.chr[reg] = value,
                     0xE000 => state.chr[4 + reg] = value,
@@ -430,6 +512,7 @@ impl Mapper {
             }
             0x5205 => state.multiplier_a = value,
             0x5206 => state.multiplier_b = value,
+            0x5000..=0x5015 => state.audio.write(addr, value),
             0x5C00..=0x5FFF => {
                 let index = usize::from(addr - 0x5C00) & (MMC5_EXRAM_LEN - 1);
                 state.exram[index] = value;
@@ -439,18 +522,12 @@ impl Mapper {
     }
 
     /// Readable MMC5 registers. Everything else in `$5000-$5FFF` reads as zero.
-    pub fn read_register(&self, addr: u16) -> u8 {
+    pub fn read_register(&mut self, addr: u16) -> u8 {
         let Mapper::Mmc5(state) = self else {
             return 0;
         };
         match addr {
-            0x5010 => {
-                if state.in_frame {
-                    0x40
-                } else {
-                    0
-                }
-            }
+            0x5010 | 0x5015 => state.audio.read(addr),
             0x5204 => (u8::from(state.irq_pending) << 7) | (u8::from(state.in_frame) << 6),
             0x5205 => state.product() as u8,
             0x5206 => (state.product() >> 8) as u8,
@@ -500,7 +577,7 @@ impl Mapper {
     pub fn irq_pending(&self) -> bool {
         match self {
             Mapper::Mmc3(state) => state.irq_pending,
-            Mapper::Mmc5(state) => state.irq_pending,
+            Mapper::Mmc5(state) => state.irq_pending || state.audio.irq_pending(),
             Mapper::Vrc6(state) => state.irq_pending,
             _ => false,
         }
@@ -508,6 +585,35 @@ impl Mapper {
 
     pub fn prg_ram_disabled(&self) -> bool {
         false
+    }
+
+    /// Advances expansion audio by one CPU cycle.
+    pub fn clock_audio(&mut self) {
+        match self {
+            Mapper::Mmc5(state) => state.audio.clock(),
+            Mapper::Vrc6(state) => state.audio.clock(),
+            _ => {}
+        }
+    }
+
+    pub fn audio_output(&self) -> f32 {
+        match self {
+            Mapper::Mmc5(state) => state.audio.output(),
+            Mapper::Vrc6(state) => state.audio.output(),
+            _ => 0.0,
+        }
+    }
+
+    pub fn has_expansion_audio(&self) -> bool {
+        matches!(self, Mapper::Mmc5(_) | Mapper::Vrc6(_))
+    }
+
+    /// Background substitution state for the current scanline, if this is MMC5.
+    pub fn mmc5_render(&self) -> Option<Mmc5Render> {
+        match self {
+            Mapper::Mmc5(state) => Some(Mmc5Render::from_state(state)),
+            _ => None,
+        }
     }
 
     pub fn state(&self) -> MapperState {

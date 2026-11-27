@@ -4,6 +4,35 @@ All notable changes to NES Core are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-27
+
+### Added
+
+- MMC5 expansion audio: two pulse channels with the MMC5's 240 Hz envelope and
+  length clock, the 8-bit raw PCM channel at `$5011`, the `$5010` PCM IRQ with
+  read acknowledgement, and the `$5015` enable and status register.
+- MMC5 vertical split-screen: `$5200-$5202` select the side, tile threshold,
+  scroll and 4 KB CHR bank, and the split region takes its tiles, attributes and
+  pattern rows from ExRAM.
+- MMC5 ExRAM extended attributes: `$5104` mode 1 gives every background tile its
+  own palette and 4 KB CHR bank, with `$5130` supplying the upper CHR bits.
+- VRC6 expansion audio: two pulse channels and the sawtooth accumulator,
+  including `$9003` halt and 16x/256x frequency scaling.
+- Expansion audio is clocked per CPU cycle and mixed into the APU output.
+- Tests for MMC5 pulse and PCM output, the PCM IRQ, VRC6 pulse/saw output and
+  halt, ExRAM attribute selection, split-region fetches, and rendered pixels for
+  both MMC5 background modes.
+
+### Known limitations
+
+- MMC5 fill-mode nametables, ExRAM used as a nametable, PCM read mode and the
+  SL board's split fine-scroll are not implemented.
+- Split-screen substitution is applied per screen tile and ignores the PPU's
+  dummy nametable fetches. Substitution follows PPUMASK's rendering bits rather
+  than the dedicated pin.
+- MMC5 expansion audio uses a fixed 7424-cycle frame clock and an AC-coupled
+  model of the PCM DAC.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added

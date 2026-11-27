@@ -1,8 +1,9 @@
 //! iNES cartridge images and the mappers NES Core supports.
 
+mod audio;
 mod mapper;
 
-pub use mapper::{Mapper, MapperState};
+pub use mapper::{Mapper, MapperState, Mmc5Render};
 
 use std::fmt;
 use std::fs;
@@ -276,8 +277,9 @@ impl Cartridge {
         hash
     }
 
-    /// CPU-side cartridge read for $4020-$FFFF.
-    pub fn cpu_read(&self, addr: u16) -> u8 {
+    /// CPU-side cartridge read for $4020-$FFFF. Reading `$5010` acknowledges the
+    /// MMC5 PCM IRQ, so this takes the cartridge mutably.
+    pub fn cpu_read(&mut self, addr: u16) -> u8 {
         match addr {
             0x4020..=0x4FFF => 0,
             0x5000..=0x5FFF => self.mapper.read_register(addr),
@@ -339,6 +341,13 @@ impl Cartridge {
     pub fn chr_read_sprite(&self, addr: u16) -> u8 {
         let offset = self.chr_offset(addr, true);
         self.chr_memory[offset]
+    }
+
+    /// Physical CHR read used by MMC5 background substitution: extended
+    /// attributes and the split region select a complete 4 KB bank themselves,
+    /// so the normal CHR banking registers must be bypassed.
+    pub fn chr_read_direct(&self, addr: u16) -> u8 {
+        self.chr_memory[usize::from(addr) % self.chr_memory.len().max(1)]
     }
 
     /// Writes only reach CHR when the cartridge has CHR RAM.
@@ -523,6 +532,24 @@ impl Cartridge {
             Mirroring::OneScreenUpper => 1,
         };
         physical * 0x400 + offset
+    }
+
+    /// Advances the mapper's expansion audio by one CPU cycle.
+    pub fn clock_audio(&mut self) {
+        self.mapper.clock_audio();
+    }
+
+    pub fn audio_output(&self) -> f32 {
+        self.mapper.audio_output()
+    }
+
+    pub fn has_expansion_audio(&self) -> bool {
+        self.mapper.has_expansion_audio()
+    }
+
+    /// MMC5 background substitution data for the current scanline.
+    pub fn mmc5_render(&self) -> Option<Mmc5Render> {
+        self.mapper.mmc5_render()
     }
 
     /// Mapper IRQ lines are clocked once per rendered scanline (A12 rise).

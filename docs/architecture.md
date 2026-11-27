@@ -76,8 +76,18 @@ banked PRG RAM, the 1 KB ExRAM at `$5C00-$5FFF`, per-table nametable mapping,
 the 8x8 multiplier and the scanline IRQ. Sprite pattern fetches go through
 `chr_read_sprite`, so MMC5's separate sprite banks are honoured. VRC6 keeps its
 registers above `$8000` and handles both address-line variants (24 and 26).
-MMC5 split-screen rendering, ExRAM extended attributes and expansion audio are
-not emulated.
+
+MMC5 background substitution is exposed to the PPU as an `Mmc5Render` snapshot
+for the current scanline: split enable/side/threshold, split scroll and bank,
+and a copy of ExRAM. The PPU asks for a replacement tile, palette and pattern
+base per background tile, so extended attributes (`$5104` mode 1) and vertical
+split-screen (`$5200-$5202`) are resolved in the cartridge without holding a
+borrow while rendering. Fill-mode nametables and ExRAM used as a nametable are
+not implemented.
+
+Expansion audio lives in `src/cartridge/audio.rs`. The bus clocks it once per
+CPU cycle and copies its output into the APU mixer; the state is part of each
+mapper's save state.
 
 ## PPU
 
@@ -112,6 +122,11 @@ non-linear formula and downsamples the ~1.79 MHz output to 44.1 kHz using a
 fractional cycle accumulator. DMC sample bytes are fetched from the bus on
 request. Reading `$4015` acknowledges the frame IRQ; the DMC IRQ is included in
 the CPU IRQ level.
+
+For cartridges with expansion audio the bus clocks the mapper chip first and
+sets `Apu::expansion`, which the mixer adds to the non-linear APU output. MMC5
+pulses use the 2A03 pulse DAC formula with the MMC5's own 240 Hz frame clock;
+VRC6 uses its documented 6-bit linear DAC.
 
 The APU accumulates samples in a `Vec<f32>` that the emulator drains each frame.
 The desktop app forwards them to the platform audio backend, which buffers them
@@ -174,7 +189,10 @@ otherwise generated deterministically from the ROM fingerprint.
   interrupts and unofficial instructions with a RAM-only bus.
 - `tests/cartridge.rs` builds synthetic iNES images and checks validation, NROM
   mirroring, bank switching for UxROM/CNROM/MMC1/MMC3/MMC5/VRC6, MMC5's
-multiplier, PRG RAM and scanline IRQ, and CHR RAM behaviour.
+  multiplier, PRG RAM, scanline and PCM IRQs, ExRAM/split-screen fetch data,
+  expansion audio output for MMC5 and VRC6, and CHR RAM behaviour.
+- `tests/ppu.rs` renders single scanlines through an MMC5 cartridge and asserts
+  the pixels produced by ExRAM extended attributes and vertical split-screen.
 - `tests/emulator.rs` builds an NROM image that programs the PPU, enables NMI and
   counts NMIs; it asserts rendered pixels, audio sample counts, controller
   shifting and save-state round-trips/version rejection.

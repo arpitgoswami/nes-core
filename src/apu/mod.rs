@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 pub const CPU_CLOCK_HZ: f64 = 1_789_773.0;
 pub const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 
-const LENGTH_TABLE: [u8; 32] = [
+pub(crate) const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22,
     192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
-const DUTY_TABLE: [[u8; 8]; 4] = [
+pub(crate) const DUTY_TABLE: [[u8; 8]; 4] = [
     [0, 1, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 0, 0, 0, 0, 0],
     [0, 1, 1, 1, 1, 0, 0, 0],
@@ -483,6 +483,8 @@ pub struct Apu {
     pub volume: f32,
     pub muted: bool,
     pub last_mixed: f32,
+    /// Cartridge expansion audio (MMC5 or VRC6) for the current CPU cycle.
+    pub expansion: f32,
 }
 
 impl Apu {
@@ -512,6 +514,7 @@ impl Apu {
             volume: 0.7,
             muted: false,
             last_mixed: 0.0,
+            expansion: 0.0,
         }
     }
 
@@ -694,7 +697,7 @@ impl Apu {
         } else {
             0.0
         };
-        (pulse_out + tnd_out).clamp(0.0, 1.0)
+        (pulse_out + tnd_out + self.expansion).clamp(0.0, 1.0)
     }
 
     /// Advances one CPU cycle.

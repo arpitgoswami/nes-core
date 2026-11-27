@@ -27,6 +27,8 @@ pub struct Bus {
     pub cart: Rc<RefCell<Cartridge>>,
     pub controllers: [Controller; 2],
     pub open_bus: u8,
+    /// Set for cartridges with expansion audio (MMC5, VRC6).
+    expansion_audio: bool,
     stall_cycles: u32,
 }
 
@@ -36,10 +38,12 @@ impl Bus {
     }
 
     pub fn with_sample_rate(cart: Rc<RefCell<Cartridge>>, sample_rate: u32) -> Self {
+        let expansion_audio = cart.borrow().has_expansion_audio();
         Self {
             ram: [0; 2048],
             ppu: Ppu::new(cart.clone()),
             apu: Apu::new(sample_rate),
+            expansion_audio,
             cart,
             controllers: [Controller::new(), Controller::new()],
             open_bus: 0,
@@ -62,10 +66,10 @@ impl Bus {
         }
     }
 
-    fn dmc_read(&self, addr: u16) -> u8 {
+    fn dmc_read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x1FFF => self.ram[usize::from(addr) & 0x07FF],
-            0x4020..=0xFFFF => self.cart.borrow().cpu_read(addr),
+            0x4020..=0xFFFF => self.cart.borrow_mut().cpu_read(addr),
             _ => 0,
         }
     }
@@ -73,6 +77,11 @@ impl Bus {
     /// Advances PPU/APU hardware by `cycles` CPU cycles.
     pub fn tick(&mut self, cycles: u32) {
         for _ in 0..cycles {
+            if self.expansion_audio {
+                let mut cart = self.cart.borrow_mut();
+                cart.clock_audio();
+                self.apu.expansion = cart.audio_output();
+            }
             self.apu.step();
             if let Some(addr) = self.apu.take_dmc_request() {
                 let sample = self.dmc_read(addr);
@@ -119,7 +128,7 @@ impl CpuBus for Bus {
             0x4016 => self.controllers[0].read(),
             0x4017 => self.controllers[1].read(),
             0x4000..=0x4014 | 0x4018..=0x401F => self.open_bus,
-            0x4020..=0xFFFF => self.cart.borrow().cpu_read(addr),
+            0x4020..=0xFFFF => self.cart.borrow_mut().cpu_read(addr),
         };
         self.open_bus = value;
         value

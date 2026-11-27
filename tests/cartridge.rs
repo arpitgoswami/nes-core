@@ -54,7 +54,7 @@ fn nrom_maps_and_mirrors_16k_prg() {
     let mut prg = vec![0u8; 16384];
     prg[0] = 0x11;
     prg[0x3FFF] = 0x22;
-    let cart = Cartridge::from_bytes(&ines(&prg, &[], 0, 0)).unwrap();
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 0, 0)).unwrap();
     assert_eq!(cart.cpu_read(0x8000), 0x11);
     assert_eq!(cart.cpu_read(0xBFFF), 0x22);
     assert_eq!(cart.cpu_read(0xC000), 0x11);
@@ -269,4 +269,121 @@ fn chr_ram_writes_are_ignored_for_chr_rom() {
     let mut cart = Cartridge::from_bytes(&ines(&prg, &chr, 0, 0)).unwrap();
     cart.chr_write(0x10, 0xFF);
     assert_eq!(cart.chr_read(0x10), 0x5A);
+}
+
+#[test]
+fn mmc5_expansion_audio_outputs_pulses_and_pcm() {
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &vec![0u8; 8192], 5, 0)).unwrap();
+    cart.cpu_write(0x5015, 0x01);
+    cart.cpu_write(0x5000, 0xBF); // duty 50%, length halt, constant volume 15
+    cart.cpu_write(0x5002, 0x64);
+    cart.cpu_write(0x5003, 0x08);
+    let mut peak = 0.0f32;
+    for _ in 0..2000 {
+        cart.clock_audio();
+        peak = peak.max(cart.audio_output());
+    }
+    assert!(peak > 0.05, "pulse output too quiet: {peak}");
+    assert_eq!(cart.cpu_read(0x5015) & 0x01, 0x01);
+
+    cart.cpu_write(0x5015, 0x05);
+    cart.cpu_write(0x5011, 0xFF);
+    assert!(
+        cart.audio_output() > 0.2,
+        "the PCM DAC should be audible on top of the pulses"
+    );
+
+    cart.cpu_write(0x5015, 0x00);
+    assert_eq!(cart.audio_output(), 0.0);
+}
+
+#[test]
+fn mmc5_pcm_irq_is_acknowledged_by_reading_5010() {
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &vec![0u8; 8192], 5, 0)).unwrap();
+    cart.cpu_write(0x5010, 0x80);
+    cart.cpu_write(0x5011, 0x40);
+    assert!(!cart.irq_pending());
+
+    // A zero write keeps the DAC value and raises the PCM IRQ.
+    cart.cpu_write(0x5011, 0x00);
+    assert!(cart.irq_pending());
+    assert_eq!(cart.cpu_read(0x5010) & 0x80, 0x80);
+    assert!(!cart.irq_pending());
+}
+
+#[test]
+fn mmc5_extended_attributes_select_palette_and_chr_bank() {
+    let mut cart =
+        Cartridge::from_bytes(&ines(&vec![0u8; 65536], &vec![0u8; 32768], 5, 0)).unwrap();
+    cart.cpu_write(0x5104, 1);
+    cart.cpu_write(0x5130, 1);
+    cart.cpu_write(0x5C00, 0x03);
+    cart.cpu_write(0x5C01, 0x41);
+
+    let render = cart.mmc5_render().expect("MMC5 exposes background state");
+    assert!(render.extended_attributes);
+    assert!(!render.split_enabled);
+    assert_eq!(render.extended_attribute(0, 0), (0, 3 | (1 << 6)));
+    assert_eq!(render.extended_attribute(0, 1), (1, 1 | (1 << 6)));
+}
+
+#[test]
+fn mmc5_split_screen_reads_exram_nametable() {
+    let mut cart =
+        Cartridge::from_bytes(&ines(&vec![0u8; 65536], &vec![0u8; 32768], 5, 0)).unwrap();
+    cart.cpu_write(0x5104, 0);
+    cart.cpu_write(0x5200, 0x80 | 16); // enabled, left side, threshold 16 tiles
+    cart.cpu_write(0x5201, 0x08); // split scroll: second tile row
+    cart.cpu_write(0x5202, 2); // 4 KB CHR bank 2
+    cart.cpu_write(0x5C00 + 32 + 5, 0x42);
+    cart.cpu_write(0x5C00 + 960 + 2 * 8 + 1, 0x03);
+
+    let render = cart.mmc5_render().expect("MMC5 exposes background state");
+    assert!(render.split_region(0));
+    assert!(render.split_region(15));
+    assert!(!render.split_region(16));
+    assert_eq!(render.split_tile(0, 5), (0x42, 3));
+    assert_eq!(render.split_fine_row(0), 0);
+    assert_eq!(render.split_pattern_base(0x42), 2 * 0x1000 + 0x42 * 16);
+
+    // RAM mode 2 disables the split screen.
+    cart.cpu_write(0x5104, 2);
+    let render = cart.mmc5_render().unwrap();
+    assert!(!render.split_enabled);
+}
+
+#[test]
+fn vrc6_expansion_audio_outputs_pulses_and_saw() {
+    let mut cart =
+        Cartridge::from_bytes(&ines(&vec![0u8; 32768], &vec![0u8; 8192], 24, 0)).unwrap();
+    cart.cpu_write(0x9000, 0x8F); // ignore duty, full volume
+    cart.cpu_write(0x9001, 0x40);
+    cart.cpu_write(0x9002, 0x80);
+    let mut peak = 0.0f32;
+    for _ in 0..2000 {
+        cart.clock_audio();
+        peak = peak.max(cart.audio_output());
+    }
+    assert!(peak > 0.05, "VRC6 pulse output too quiet: {peak}");
+
+    cart.cpu_write(0xB000, 0x20);
+    cart.cpu_write(0xB001, 0x40);
+    cart.cpu_write(0xB002, 0x80);
+    let mut saw_peak = 0.0f32;
+    for _ in 0..4000 {
+        cart.clock_audio();
+        saw_peak = saw_peak.max(cart.audio_output());
+    }
+    assert!(
+        saw_peak > peak,
+        "sawtooth should add to the pulse output ({saw_peak} vs {peak})"
+    );
+
+    // $9003 bit 0 halts every oscillator.
+    cart.cpu_write(0x9003, 0x01);
+    let halted = cart.audio_output();
+    for _ in 0..1000 {
+        cart.clock_audio();
+    }
+    assert_eq!(cart.audio_output(), halted);
 }

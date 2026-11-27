@@ -1465,9 +1465,10 @@ impl NesApp {
                 ),
                 (
                     "Known limitations",
-                    "No gamepad input, no rewinding, no netplay, no PAL timing, no per-dot \
-                     mid-scanline raster effects, and no expansion audio. Some mappers and \
-                     games are not supported; see the compatibility notes in the repository.",
+                    "No gamepad input, no rewinding, no netplay, no PAL timing and no per-dot \
+                     mid-scanline raster effects. MMC5 and VRC6 expansion audio are emulated; \
+                     MMC5 fill-mode nametables are not. Some mappers and games are not \
+                     supported; see the compatibility notes in the repository.",
                 ),
             ] {
                 ui.label(RichText::new(heading).size(14.0).strong().color(ACCENT));

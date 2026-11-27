@@ -327,6 +327,13 @@ impl Ppu {
         let mut bg_pixels = [0u8; SCREEN_WIDTH];
         let mut bg_color_index = [0u8; SCREEN_WIDTH];
 
+        // MMC5 substitutes background data while PPUMASK's rendering bits are on.
+        let mmc5 = if bg_enabled && self.state.mask & 0x18 != 0 {
+            self.cart.borrow().mmc5_render()
+        } else {
+            None
+        };
+
         if bg_enabled {
             let base_nt = (self.state.v & 0x0C00) >> 10;
             let coarse_y = ((self.state.v & 0x03E0) >> 5) as usize;
@@ -347,15 +354,41 @@ impl Ppu {
                 let tile_x = tile_x % 32;
                 let nt = base_nt ^ (nt_x as u16);
                 let nt_addr = 0x2000 + nt * 0x400 + (coarse_y as u16) * 32 + tile_x as u16;
-                let tile = self.nametable_read(nt_addr);
+                let mut tile = self.nametable_read(nt_addr);
                 let attr_addr =
                     0x2000 + nt * 0x400 + 0x3C0 + ((coarse_y / 4) as u16) * 8 + (tile_x / 4) as u16;
                 let attribute = self.nametable_read(attr_addr);
                 let shift = ((coarse_y % 4) / 2) * 4 + ((tile_x % 4) / 2) * 2;
-                let palette = (attribute >> shift) & 0x03;
-                let pattern_addr = pattern_table + u16::from(tile) * 16 + fine_y as u16;
-                let low = self.cart.borrow().chr_read(pattern_addr);
-                let high = self.cart.borrow().chr_read(pattern_addr + 8);
+                let mut palette = (attribute >> shift) & 0x03;
+                let mut pattern_base = pattern_table + u16::from(tile) * 16;
+                let mut row = fine_y;
+                let mut direct = false;
+                if let Some(mmc5) = mmc5.as_ref() {
+                    let screen_tile = scrolled / 8;
+                    if mmc5.split_region(screen_tile) {
+                        let (split_tile, split_palette) = mmc5.split_tile(scanline, screen_tile);
+                        tile = split_tile;
+                        palette = split_palette;
+                        pattern_base = mmc5.split_pattern_base(tile);
+                        row = mmc5.split_fine_row(scanline);
+                        direct = true;
+                    } else if mmc5.extended_attributes {
+                        let (extended_palette, bank) = mmc5.extended_attribute(coarse_y, tile_x);
+                        palette = extended_palette;
+                        pattern_base = bank * 0x1000 + u16::from(tile) * 16;
+                        direct = true;
+                    }
+                }
+                let pattern_addr = pattern_base + row as u16;
+                let cart = self.cart.borrow();
+                let (low, high) = if direct {
+                    (
+                        cart.chr_read_direct(pattern_addr),
+                        cart.chr_read_direct(pattern_addr + 8),
+                    )
+                } else {
+                    (cart.chr_read(pattern_addr), cart.chr_read(pattern_addr + 8))
+                };
                 let bit = 7 - (scrolled % 8);
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
                 bg_color_index[x] = pixel;
