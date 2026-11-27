@@ -188,6 +188,7 @@ fn mmc5_banks_prg_ram_and_exposes_multiplier() {
     assert_eq!(cart.cpu_read(0x5205), 63);
     assert_eq!(cart.cpu_read(0x5206), 0);
 
+    cart.cpu_write(0x5104, 2);
     cart.cpu_write(0x5C00, 0x5A);
     assert_eq!(cart.cpu_read(0x5C00), 0x5A);
 }
@@ -480,6 +481,116 @@ fn gxrom_switches_prg_and_chr_banks() {
     cart.cpu_write(0x8000, 0x12);
     assert_eq!(cart.cpu_read(0x8000), 0x51);
     assert_eq!(cart.chr_read(0x0000), 0x62);
+}
+
+#[test]
+fn mmc5_maps_fill_mode_and_exram_nametables() {
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 65536], &vec![0u8; 8192], 5, 0)).unwrap();
+    cart.cpu_write(0x5104, 0);
+    cart.cpu_write(0x5105, 0xAA); // every table from ExRAM
+    cart.cpu_write(0x5C00, 0x5A);
+    cart.cpu_write(0x5C01, 0x3C);
+    assert_eq!(cart.nametable_read(0x2000), Some(0x5A));
+    assert!(cart.nametable_write(0x2001, 0x77));
+    assert_eq!(cart.nametable_read(0x2401), Some(0x77));
+    // $5C00 is write-only in modes 0 and 1.
+    assert_eq!(cart.cpu_read(0x5C00), 0);
+
+    // In modes 2 and 3 ExRAM is not a nametable and reads as zero.
+    cart.cpu_write(0x5104, 2);
+    assert_eq!(cart.nametable_read(0x2000), Some(0));
+    assert!(cart.nametable_write(0x2000, 0x11));
+    assert_eq!(cart.cpu_read(0x5C00), 0x5A);
+
+    cart.cpu_write(0x5104, 0);
+    cart.cpu_write(0x5105, 0xFF);
+    cart.cpu_write(0x5106, 0x2A);
+    cart.cpu_write(0x5107, 0x02);
+    assert_eq!(cart.nametable_read(0x2000), Some(0x2A));
+    assert_eq!(cart.nametable_read(0x23C0), Some(0xAA));
+    assert!(cart.nametable_write(0x2000, 0x00));
+    assert_eq!(cart.nametable_read(0x2000), Some(0x2A));
+}
+
+#[test]
+fn mmc5_pcm_read_mode_feeds_prg_bytes_to_the_dac() {
+    let mut prg = vec![0u8; 65536];
+    prg[0] = 0x40;
+    prg[1] = 0xC0;
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &vec![0u8; 8192], 5, 0)).unwrap();
+    cart.cpu_write(0x5015, 0x04);
+    cart.cpu_write(0x5010, 0x01); // read mode
+    assert_eq!(cart.cpu_read(0x8000), 0x40);
+    assert!(
+        cart.audio_output() < 0.0,
+        "the DAC should follow the PRG byte"
+    );
+    cart.cpu_read(0x8001);
+    assert!(cart.audio_output() > 0.0);
+    // Writes to $5011 are ignored while read mode is active.
+    cart.cpu_write(0x5011, 0xFF);
+    assert!(cart.audio_output() > 0.0);
+}
+
+#[test]
+fn vrc6_switchable_chr_banking_modes() {
+    let mut chr = vec![0u8; 64 * 1024];
+    for bank in 0..16usize {
+        chr[bank * 0x400] = 0x10 + bank as u8;
+    }
+    let mut cart = Cartridge::from_bytes(&ines(&vec![0u8; 32768], &chr, 24, 0)).unwrap();
+    // 2 KB mode with bit 5 set: registers 0-3 feed pairs of 1 KB slots.
+    cart.cpu_write(0xB003, 0x21);
+    cart.cpu_write(0xD000, 2);
+    cart.cpu_write(0xD001, 4);
+    cart.cpu_write(0xD002, 6);
+    cart.cpu_write(0xD003, 8);
+    assert_eq!(cart.chr_read(0x0000), 0x12);
+    assert_eq!(cart.chr_read(0x0400), 0x13);
+    assert_eq!(cart.chr_read(0x0800), 0x14);
+    assert_eq!(cart.chr_read(0x0C00), 0x15);
+    assert_eq!(cart.chr_read(0x1000), 0x16);
+    assert_eq!(cart.chr_read(0x1400), 0x17);
+
+    // 4 KB mode: slots 0-3 use registers 0-3 directly, slots 4-7 pair 4 and 5.
+    cart.cpu_write(0xB003, 0x22);
+    assert_eq!(cart.chr_read(0x0400), 0x14);
+    cart.cpu_write(0xE000, 10);
+    cart.cpu_write(0xE001, 10);
+    assert_eq!(cart.chr_read(0x1000), 0x1A);
+    assert_eq!(cart.chr_read(0x1800), 0x1A);
+}
+
+#[test]
+fn vrc6_cycle_irq_counts_cpu_cycles() {
+    let mut cart =
+        Cartridge::from_bytes(&ines(&vec![0u8; 32768], &vec![0u8; 8192], 24, 0)).unwrap();
+    cart.cpu_write(0xF000, 3);
+    cart.cpu_write(0xF001, 0x06); // cycle mode, enabled
+    assert!(!cart.irq_pending());
+    for _ in 0..3 {
+        cart.clock_cpu();
+    }
+    assert!(!cart.irq_pending());
+    cart.clock_cpu();
+    assert!(cart.irq_pending());
+    cart.cpu_write(0xF002, 0);
+    assert!(!cart.irq_pending());
+}
+
+#[test]
+fn quattro_switches_outer_and_inner_banks() {
+    let mut prg = vec![0u8; 256 * 1024];
+    prg[0] = 0xA1;
+    prg[0x10000] = 0xB2;
+    prg[0x4000] = 0xC3;
+    let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 232, 0)).unwrap();
+    assert_eq!(cart.mapper_name(), "Quattro (232)");
+    assert_eq!(cart.cpu_read(0x8000), 0xA1);
+    cart.cpu_write(0x8000, 0x08); // outer 64 KB bank 1
+    assert_eq!(cart.cpu_read(0x8000), 0xB2);
+    cart.cpu_write(0xC000, 1);
+    assert_eq!(cart.cpu_read(0xC000), 0xC3);
 }
 
 #[test]

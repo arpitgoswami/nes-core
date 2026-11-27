@@ -51,11 +51,14 @@ pub struct Ppu {
     pub frame_complete: bool,
     pub cart: Rc<RefCell<Cartridge>>,
     pub sprites_on_line: u8,
+    pub pal: bool,
 }
 
 impl Ppu {
     pub fn new(cart: Rc<RefCell<Cartridge>>) -> Self {
+        let pal = cart.borrow().header.pal;
         Self {
+            pal,
             state: PpuState {
                 ctrl: 0,
                 mask: 0,
@@ -70,7 +73,7 @@ impl Ppu {
                 oam: vec![0; 256],
                 vram: vec![0; 4096],
                 palette: vec![0; 32],
-                scanline: 261,
+                scanline: if pal { 311 } else { 261 },
                 dot: 0,
                 frame: 0,
                 odd_frame: false,
@@ -88,7 +91,7 @@ impl Ppu {
         self.state.ctrl = 0;
         self.state.mask = 0;
         self.state.status = 0;
-        self.state.scanline = 261;
+        self.state.scanline = self.total_scanlines() - 1;
         self.state.dot = 0;
         self.state.write_toggle = false;
         self.state.v = 0;
@@ -98,6 +101,15 @@ impl Ppu {
         self.state.frame = frame;
         self.nmi_pending = false;
         self.frame_complete = false;
+    }
+
+    /// 262 scanlines on NTSC, 312 on PAL/Dendy.
+    pub fn total_scanlines(&self) -> u16 {
+        if self.pal {
+            312
+        } else {
+            262
+        }
     }
 
     pub fn rendering_enabled(&self) -> bool {
@@ -113,11 +125,19 @@ impl Ppu {
     }
 
     fn nametable_read(&self, addr: u16) -> u8 {
-        let index = self.cart.borrow().nametable_index(addr);
+        let cart = self.cart.borrow();
+        if let Some(value) = cart.nametable_read(addr) {
+            return value;
+        }
+        let index = cart.nametable_index(addr);
+        drop(cart);
         self.state.vram[index]
     }
 
     fn nametable_write(&mut self, addr: u16, value: u8) {
+        if self.cart.borrow_mut().nametable_write(addr, value) {
+            return;
+        }
         let index = self.cart.borrow().nametable_index(addr);
         self.state.vram[index] = value;
     }
@@ -246,7 +266,8 @@ impl Ppu {
             self.frame_complete = true;
         }
 
-        if scanline == 261 && dot == 1 {
+        let pre_render = self.total_scanlines() - 1;
+        if scanline == pre_render && dot == 1 {
             self.state.status &= !(STATUS_VBLANK | STATUS_SPRITE0 | STATUS_OVERFLOW);
         }
 
@@ -255,7 +276,7 @@ impl Ppu {
             self.increment_y();
         }
 
-        if self.rendering_enabled() && (scanline < 240 || scanline == 261) && dot == 260 {
+        if self.rendering_enabled() && (scanline < 240 || scanline == pre_render) && dot == 260 {
             self.cart.borrow_mut().on_scanline();
         }
 
@@ -263,7 +284,7 @@ impl Ppu {
         if self.state.dot > 340 {
             self.state.dot = 0;
             self.state.scanline += 1;
-            if self.state.scanline > 261 {
+            if self.state.scanline >= self.total_scanlines() {
                 self.state.scanline = 0;
                 self.state.frame += 1;
             }

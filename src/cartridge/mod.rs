@@ -91,6 +91,8 @@ pub struct Header {
     pub four_screen: bool,
     pub trainer: bool,
     pub nes2: bool,
+    /// PAL/Dendy timing from the header; the PPU uses 312 scanlines for PAL.
+    pub pal: bool,
 }
 
 /// Persistent mapper state. Static PRG/CHR ROM contents are not duplicated in
@@ -134,6 +136,7 @@ impl Cartridge {
 
         let flags6 = data[6];
         let flags7 = data[7];
+        let flags9 = data[9];
         let nes2 = (flags7 & 0x0C) == 0x08;
         let mut mapper = u16::from(flags6 >> 4) | u16::from(flags7 & 0xF0);
         let mut prg_banks = u32::from(data[4]);
@@ -207,6 +210,11 @@ impl Cartridge {
             four_screen,
             trainer,
             nes2,
+            pal: if nes2 {
+                data[12] & 0x03 == 0x01
+            } else {
+                flags9 & 0x01 != 0
+            },
         };
 
         Ok(Self {
@@ -289,7 +297,14 @@ impl Cartridge {
             },
             0x8000..=0xFFFF => {
                 let offset = self.prg_offset(addr);
-                self.prg_rom[offset]
+                let value = self.prg_rom[offset];
+                // MMC5 PCM read mode feeds PRG ROM bytes to the PCM DAC.
+                if let Mapper::Mmc5(state) = &mut self.mapper {
+                    if state.audio.pcm_mode_read && value != 0 {
+                        state.audio.pcm = value;
+                    }
+                }
+                value
             }
             _ => 0,
         }
@@ -397,6 +412,16 @@ impl Cartridge {
                     banks.saturating_sub(2) + slot
                 } else {
                     usize::from(*bank) * 2 + slot - 2
+                };
+                (bank % banks) * 0x2000 + usize::from(addr & 0x1FFF)
+            }
+            Mapper::Quattro { outer, inner } => {
+                let banks = (prg_len / 0x2000).max(1);
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                let bank = if slot < 2 {
+                    usize::from(*outer) * 8 + slot
+                } else {
+                    usize::from(*inner) * 2 + slot - 2
                 };
                 (bank % banks) * 0x2000 + usize::from(addr & 0x1FFF)
             }
@@ -513,10 +538,27 @@ impl Cartridge {
                 let register = if sprite { slot } else { 8 + slot % 4 };
                 (usize::from(state.chr_banks[register]) % banks_1k) * 0x400 + (addr & 0x3FF)
             }
+            Mapper::Quattro { .. } => addr % len,
             Mapper::Vrc6(state) => {
                 let banks_1k = (len / 0x400).max(1);
                 let slot = addr / 0x400;
-                (usize::from(state.chr[slot]) % banks_1k) * 0x400 + (addr & 0x3FF)
+                // `$B003` bits 0-1 choose 1 KB, 2 KB or 4 KB banking. Bit 5
+                // decides whether PPU A10 comes from the slot or the register.
+                let paired = state.banking & 0x20 != 0;
+                let pair = |base: u8, upper: usize| {
+                    if paired {
+                        (base & 0xFE) | upper as u8
+                    } else {
+                        base
+                    }
+                };
+                let bank = match state.banking & 0x03 {
+                    0 => state.chr[slot],
+                    1 => pair(state.chr[slot / 2], slot & 1),
+                    _ if slot < 4 => state.chr[slot],
+                    _ => pair(state.chr[4 + (slot - 4) / 2], slot & 1),
+                };
+                (usize::from(bank) % banks_1k) * 0x400 + (addr & 0x3FF)
             }
             Mapper::Cnrom { bank } => {
                 let banks_8k = (len / 0x2000).max(1);
@@ -567,6 +609,53 @@ impl Cartridge {
         offset % len
     }
 
+    /// Nametable data supplied by the cartridge instead of the PPU's CIRAM.
+    /// MMC5 can map a table to its ExRAM or to fill mode through `$5105`.
+    pub fn nametable_read(&self, addr: u16) -> Option<u8> {
+        let Mapper::Mmc5(state) = &self.mapper else {
+            return None;
+        };
+        let addr = usize::from(addr & 0x0FFF);
+        let table = addr / 0x400;
+        let offset = addr % 0x400;
+        match (state.nametable_map >> (table * 2)) & 0x03 {
+            2 => Some(if state.exram_mode & 0x02 != 0 {
+                0
+            } else {
+                state.exram[offset]
+            }),
+            3 => Some(if offset >= 0x3C0 {
+                state.fill_color * 0x55
+            } else {
+                state.fill_tile
+            }),
+            _ => None,
+        }
+    }
+
+    /// PPU writes into a cartridge-backed nametable. Returns true when the
+    /// cartridge consumed the write.
+    pub fn nametable_write(&mut self, addr: u16, value: u8) -> bool {
+        let Mapper::Mmc5(state) = &mut self.mapper else {
+            return false;
+        };
+        let addr = usize::from(addr & 0x0FFF);
+        let table = addr / 0x400;
+        let offset = addr % 0x400;
+        match (state.nametable_map >> (table * 2)) & 0x03 {
+            2 => {
+                // PPUDATA only reaches ExRAM while it is not used as a split
+                // screen source (modes 0 and 1).
+                if state.exram_mode & 0x02 == 0 {
+                    state.exram[offset] = value;
+                }
+                true
+            }
+            3 => true,
+            _ => false,
+        }
+    }
+
     /// Maps a nametable address ($2000-$3EFF) onto the cartridge's 4KB VRAM.
     pub fn nametable_index(&self, addr: u16) -> usize {
         let addr = (addr & 0x0FFF) as usize;
@@ -591,6 +680,11 @@ impl Cartridge {
     /// Advances the mapper's expansion audio by one CPU cycle.
     pub fn clock_audio(&mut self) {
         self.mapper.clock_audio();
+    }
+
+    /// Advances cycle-counting mapper IRQs by one CPU cycle.
+    pub fn clock_cpu(&mut self) {
+        self.mapper.clock_cpu();
     }
 
     pub fn audio_output(&self) -> f32 {

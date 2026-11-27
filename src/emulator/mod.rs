@@ -10,6 +10,7 @@ use crate::controller::Button;
 use crate::cpu::Cpu;
 
 pub const FRAME_RATE: f64 = 60.098_813;
+pub const PAL_FRAME_RATE: f64 = 50.006_993;
 
 /// Maximum CPU cycles executed for one frame before bailing out. This guards
 /// against a jammed CPU or a ROM that disables NMI and never enables rendering.
@@ -49,6 +50,15 @@ impl Emulator {
         self.cpu.reset(&mut self.bus);
         self.bus.reset();
         self.frame_count = 0;
+    }
+
+    /// NTSC or PAL frame rate, driven by the cartridge header.
+    pub fn frame_rate(&self) -> f64 {
+        if self.bus.pal {
+            PAL_FRAME_RATE
+        } else {
+            FRAME_RATE
+        }
     }
 
     pub fn set_button(&mut self, player: usize, button: Button, pressed: bool) {

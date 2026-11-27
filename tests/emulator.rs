@@ -162,3 +162,15 @@ fn controller_shift_register_reports_buttons() {
     // Order: A, B, Select, Start, Up, Down, Left, Right.
     assert_eq!(pressed, vec![1, 0, 0, 1, 0, 0, 0, 0]);
 }
+
+#[test]
+fn pal_images_use_pal_ppu_timing() {
+    let mut rom = ines(&vec![0u8; 16384], &[], 0, 0);
+    rom[9] = 0x01;
+    let cart = Cartridge::from_bytes(&rom).unwrap();
+    assert!(cart.header.pal);
+    let emu = Emulator::new(cart);
+    assert_eq!(emu.bus.ppu.total_scanlines(), 312);
+    assert_eq!(emu.bus.ppu.state.scanline, 311);
+    assert!((emu.frame_rate() - 50.006_993).abs() < 1e-6);
+}

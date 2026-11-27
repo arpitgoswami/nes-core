@@ -29,6 +29,9 @@ pub struct Bus {
     pub open_bus: u8,
     /// Set for cartridges with expansion audio (MMC5, VRC6).
     expansion_audio: bool,
+    /// PAL runs the PPU at 3.2 dots per CPU cycle instead of 3.
+    pub pal: bool,
+    ppu_fraction: u32,
     stall_cycles: u32,
 }
 
@@ -39,7 +42,10 @@ impl Bus {
 
     pub fn with_sample_rate(cart: Rc<RefCell<Cartridge>>, sample_rate: u32) -> Self {
         let expansion_audio = cart.borrow().has_expansion_audio();
+        let pal = cart.borrow().header.pal;
         Self {
+            pal,
+            ppu_fraction: 0,
             ram: [0; 2048],
             ppu: Ppu::new(cart.clone()),
             apu: Apu::new(sample_rate),
@@ -77,18 +83,25 @@ impl Bus {
     /// Advances PPU/APU hardware by `cycles` CPU cycles.
     pub fn tick(&mut self, cycles: u32) {
         for _ in 0..cycles {
-            if self.expansion_audio {
+            {
                 let mut cart = self.cart.borrow_mut();
-                cart.clock_audio();
-                self.apu.expansion = cart.audio_output();
+                cart.clock_cpu();
+                if self.expansion_audio {
+                    cart.clock_audio();
+                    self.apu.expansion = cart.audio_output();
+                }
             }
             self.apu.step();
             if let Some(addr) = self.apu.take_dmc_request() {
                 let sample = self.dmc_read(addr);
                 self.apu.deliver_dmc_sample(sample);
             }
-            for _ in 0..3 {
+            // 15/5 gives the NTSC ratio of 3 dots per CPU cycle, 16/5 gives
+            // PAL's 3.2.
+            self.ppu_fraction += if self.pal { 16 } else { 15 };
+            while self.ppu_fraction >= 5 {
                 self.ppu.step();
+                self.ppu_fraction -= 5;
             }
         }
     }

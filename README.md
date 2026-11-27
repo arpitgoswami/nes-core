@@ -26,13 +26,13 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
 | APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
-| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5 (partial), 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6 (partial), 66 GxROM, 71 Camerica |
+| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6, 66 GxROM, 71 Camerica, 232 Quattro |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
 | Save states | Implemented | Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes |
 | Settings and library | Implemented | Persisted in the per-user configuration directory |
 | GUI | Implemented | Dark desktop UI with library, game view, settings, save states, achievements, about |
 | Gamepad input | Not implemented | Keyboard only in this build |
-| PAL timing | Not implemented | NTSC timing (60.0988 Hz) only |
+| PAL timing | Implemented | Header-detected PAL runs 312 scanlines at 3.2 dots per CPU cycle and 50.007 Hz |
 | Rewind/netplay/NSF playback | Not implemented | On the roadmap |
 
 ### Accuracy boundaries
@@ -44,20 +44,21 @@ and sprite-0 hit detection are approximated. MMC3's IRQ is clocked once per
 rendered scanline rather than from an exact A12 filter. These limits are why NES
 Core does not claim full NES compatibility.
 
-MMC5 support is still deliberately partial, but most of the board now works.
-PRG banking, 1 KB CHR banking with separate sprite and background banks, banked
-PRG RAM, the 8x8 multiplier, the scanline IRQ, `$5105` nametable mapping, ExRAM
-extended attributes, vertical split-screen and expansion audio are implemented.
-Extended attributes give every background tile its own palette and 4 KB CHR
-bank, and the split region takes its tiles, attributes and pattern rows from
-ExRAM. Fill-mode nametables, ExRAM used as a nametable, the PCM read mode and
-the SL board's split fine-scroll are not implemented, CHR banking is still
-evaluated at 1 KB granularity, background substitution is applied per screen
-tile rather than per PPU fetch, and the PRG RAM write-protect registers are
-stored but not enforced. VRC6 supports PRG/CHR banking, mirroring, scanline IRQs and
-its two pulse channels plus sawtooth; the cycle-counting IRQ mode is not
-implemented, and the alternate `$B003` CHR banking modes are treated as 1 KB
-banks.
+MMC5 is implemented across the board registers. PRG banking, 1 KB CHR banking
+with separate sprite and background banks, banked PRG RAM, the 8x8 multiplier,
+the scanline IRQ, `$5105` nametable mapping, fill mode, ExRAM nametables, ExRAM
+extended attributes, vertical split-screen, PCM read mode and expansion audio
+all work. Extended attributes give every background tile its own palette and
+4 KB CHR bank, and the split region takes its tiles, attributes and pattern rows
+from ExRAM. Fill mode returns `$5106`/`$5107` for tiles and attributes, and
+ExRAM nametables route PPU reads and writes through the cartridge. Remaining
+limits: CHR banking is evaluated at 1 KB granularity, background substitution
+is applied per screen tile rather than per PPU fetch, split fine scrolling uses
+the SL-board path (the bottom three bits of `$5201`), the PRG RAM write-protect
+registers are stored but not enforced, and the scanline IRQ is clocked once per
+rendered line rather than from an exact PPU address watch. VRC6 supports PRG/CHR
+banking, mirroring, scanline and cycle-counting IRQs, all four `$B003` CHR
+banking modes and its two pulse channels plus sawtooth.
 
 MMC2 and MMC4 switch CHR banks from PPU fetches of tiles `$FD` and `$FE`, one
 latch per pattern-table half. The fetch that flips a latch still reads the old
@@ -191,18 +192,18 @@ controller shift register and save states.
 
 It has **not** been validated against a broad library of commercial games, and
 no game-specific compatibility claims are made. Mapper coverage
-(0/1/2/3/4/5/7/9/10/11/24/26/66/71, with MMC5 and VRC6 partial) and the PPU's
-scanline-granular rendering are the main practical limits. Bug
+(0/1/2/3/4/5/7/9/10/11/24/26/66/71/232) and the PPU's scanline-granular
+rendering are the main practical limits. Both NTSC and PAL timing are supported. Bug
 reports that include a legally redistributable test ROM are the most useful
 kind.
 
 ## Roadmap
 
-- More mappers (69 Sunsoft FME-7, 88, 118, 119, 232 Quattro)
+- More mappers (69 Sunsoft FME-7, 88, 118, 119, 180, 184)
 - MMC5 fill-mode and ExRAM nametables, PCM read mode and finer split-screen timing
 - Per-dot PPU rendering for exact raster effects
 - Gamepad support (SDL/`gilrs`) and configurable controller ports
-- PAL/Dendy timing modes
+- Dendy timing and PAL colour differences
 - Rewind buffer and save-state thumbnails
 - Automated compatibility runs against freely licensed test ROMs
 

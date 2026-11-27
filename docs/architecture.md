@@ -69,8 +69,10 @@ without special cases in the PPU.
 
 Implemented mappers: NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), MMC5
 (5), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), VRC6 (24/26), GxROM
-(66) and Camerica (71). MMC3, MMC5 and VRC6 IRQ counters are clocked once per
-rendered scanline, which approximates the hardware's A12 filter.
+(66), Camerica (71) and Quattro (232). MMC3, MMC5 and VRC6 scanline IRQ counters
+are clocked once per rendered scanline, which approximates the hardware's A12
+filter; VRC6's cycle-counting mode is instead clocked once per CPU cycle from
+`Bus::tick`.
 
 MMC2 and MMC4 switch CHR banks from PPU fetches of tiles `$FD` and `$FE`. The
 PPU renders through `Cartridge::chr_read_ppu`, which reads the old bank and
@@ -92,7 +94,13 @@ and a copy of ExRAM. The PPU asks for a replacement tile, palette and pattern
 base per background tile, so extended attributes (`$5104` mode 1) and vertical
 split-screen (`$5200-$5202`) are resolved in the cartridge without holding a
 borrow while rendering. Fill-mode nametables and ExRAM used as a nametable are
-not implemented.
+routed through `Cartridge::nametable_read` / `nametable_write`, so the PPU asks
+the cartridge before falling back to its own 4 KB of CIRAM.
+
+PAL images are detected from the header. The PPU then runs 312 scanlines and
+the bus advances it 3.2 dots per CPU cycle (16 dots per 5 cycles, accumulated in
+integer arithmetic) instead of 3, which produces the 50.007 Hz frame rate that
+`Emulator::frame_rate` reports and the desktop app uses for pacing.
 
 Expansion audio lives in `src/cartridge/audio.rs`. The bus clocks it once per
 CPU cycle and copies its output into the APU mixer; the state is part of each

@@ -12,7 +12,7 @@ use egui::{Align, Align2, Color32, FontId, Layout, RichText, Sense, Stroke, Vec2
 
 use nes_core::cartridge::Cartridge;
 use nes_core::controller::Button;
-use nes_core::emulator::{Emulator, FRAME_RATE};
+use nes_core::emulator::Emulator;
 use nes_core::save_state;
 use nes_core::settings::{config_dir, state_dir, LibraryEntry, Settings};
 
@@ -376,7 +376,7 @@ impl NesApp {
             }
 
             session.accumulator += dt;
-            let step = 1.0 / FRAME_RATE;
+            let step = 1.0 / session.emulator.frame_rate();
             let max_frames = if session.fast_forward { 6 } else { 2 };
             let mut frames = 0u32;
             session.audio.clear();
@@ -802,7 +802,7 @@ impl NesApp {
                         RichText::new(
                             "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · \
                              9 MMC2 · 10 MMC4 · 11 Color Dreams · 24/26 VRC6 · 66 GxROM · \
-                             71 Camerica",
+                             71 Camerica · 232 Quattro",
                         )
                         .size(12.0)
                         .color(MUTED),
@@ -1471,9 +1471,9 @@ impl NesApp {
                 (
                     "Known limitations",
                     "No gamepad input, no rewinding, no netplay, no PAL timing and no per-dot \
-                     mid-scanline raster effects. MMC5 and VRC6 expansion audio are emulated; \
-                     MMC5 fill-mode nametables are not. Some mappers and games are not \
-                     supported; see the compatibility notes in the repository.",
+                     mid-scanline raster effects. MMC5 and VRC6 expansion audio, MMC5 fill \
+                     mode and PAL timing are emulated; per-dot raster tricks are not. Some \
+                     games are not compatible; see the notes in the repository.",
                 ),
             ] {
                 ui.label(RichText::new(heading).size(14.0).strong().color(ACCENT));

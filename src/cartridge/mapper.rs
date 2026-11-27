@@ -7,7 +7,7 @@ use super::Mirroring;
 
 /// Mappers implemented by NES Core. Support is listed in the README and is only
 /// claimed for titles that have actually been exercised.
-pub const SUPPORTED_MAPPERS: [u16; 14] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66, 71];
+pub const SUPPORTED_MAPPERS: [u16; 15] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66, 71, 232];
 
 /// MMC5 keeps 1 KB of internal extended RAM mirrored at `$5C00-$5FFF`.
 pub const MMC5_EXRAM_LEN: usize = 1024;
@@ -296,6 +296,22 @@ impl Default for Vrc6State {
 }
 
 impl Vrc6State {
+    /// Cycle-mode IRQ: one call per CPU cycle, reloading from the latch when
+    /// the counter reaches zero.
+    pub fn clock_cycle(&mut self) {
+        if !self.irq_enabled {
+            return;
+        }
+        if self.irq_counter == 0 {
+            self.irq_counter = self.irq_latch;
+        } else {
+            self.irq_counter -= 1;
+            if self.irq_counter == 0 {
+                self.irq_pending = true;
+            }
+        }
+    }
+
     /// Scanline-mode IRQ. Each call stands for one rendered scanline; the latch
     /// is treated as a scanline count rather than a CPU-cycle count.
     pub fn clock_irq(&mut self) {
@@ -341,6 +357,10 @@ pub enum MapperState {
         bank: u8,
         single_screen: Option<bool>,
     },
+    Quattro {
+        outer: u8,
+        inner: u8,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -373,6 +393,10 @@ pub enum Mapper {
         bank: u8,
         single_screen: Option<bool>,
     },
+    Quattro {
+        outer: u8,
+        inner: u8,
+    },
 }
 
 impl Mapper {
@@ -403,6 +427,7 @@ impl Mapper {
                 bank: 0,
                 single_screen: None,
             },
+            232 => Mapper::Quattro { outer: 0, inner: 0 },
             _ => Mapper::Nrom,
         }
     }
@@ -424,6 +449,7 @@ impl Mapper {
             Mapper::ColorDreams { .. } => 11,
             Mapper::Gxrom { .. } => 66,
             Mapper::Camerica { .. } => 71,
+            Mapper::Quattro { .. } => 232,
             Mapper::Mmc5(_) => 5,
             Mapper::Axrom { .. } => 7,
             Mapper::Vrc6(state) => {
@@ -453,6 +479,7 @@ impl Mapper {
             Mapper::ColorDreams { .. } => "Color Dreams (11)",
             Mapper::Gxrom { .. } => "GxROM (66)",
             Mapper::Camerica { .. } => "Camerica (71)",
+            Mapper::Quattro { .. } => "Quattro (232)",
             Mapper::Mmc5(_) => "MMC5 (5)",
             Mapper::Axrom { .. } => "AxROM (7)",
             Mapper::Vrc6(state) => {
@@ -563,6 +590,13 @@ impl Mapper {
                 }
                 _ => {}
             },
+            Mapper::Quattro { outer, inner } => {
+                if addr < 0xC000 {
+                    *outer = (value >> 3) & 0x03;
+                } else {
+                    *inner = value & 0x0F;
+                }
+            }
             Mapper::ColorDreams { prg, chr } => {
                 *prg = value & 0x03;
                 *chr = (value >> 4) & 0x0F;
@@ -670,6 +704,10 @@ impl Mapper {
             0x5205 => state.product() as u8,
             0x5206 => (state.product() >> 8) as u8,
             0x5C00..=0x5FFF => {
+                // Modes 0 and 1 make ExRAM write-only for the CPU (open bus).
+                if state.exram_mode <= 1 {
+                    return 0;
+                }
                 let index = usize::from(addr - 0x5C00) & (MMC5_EXRAM_LEN - 1);
                 state.exram[index]
             }
@@ -754,6 +792,15 @@ impl Mapper {
         }
     }
 
+    /// Cycle-mode IRQ for VRC6. Scanline mode is clocked from `on_scanline`.
+    pub fn clock_cpu(&mut self) {
+        if let Mapper::Vrc6(state) = self {
+            if state.irq_mode_cycle {
+                state.clock_cycle();
+            }
+        }
+    }
+
     /// Advances expansion audio by one CPU cycle.
     pub fn clock_audio(&mut self) {
         match self {
@@ -812,6 +859,10 @@ impl Mapper {
                 bank: *bank,
                 single_screen: *single_screen,
             },
+            Mapper::Quattro { outer, inner } => MapperState::Quattro {
+                outer: *outer,
+                inner: *inner,
+            },
         }
     }
 
@@ -856,6 +907,10 @@ impl Mapper {
             ) => {
                 *bank = b;
                 *single_screen = s;
+            }
+            (Mapper::Quattro { outer, inner }, MapperState::Quattro { outer: o, inner: i }) => {
+                *outer = o;
+                *inner = i;
             }
             (Mapper::Nrom, MapperState::Nrom) => {}
             _ => {}

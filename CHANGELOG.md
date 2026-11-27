@@ -4,6 +4,41 @@ All notable changes to NES Core are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-27
+
+### Added
+
+- MMC5 fill-mode nametables and ExRAM used as a nametable: `$5105` values 2
+  and 3 now feed the PPU from the cartridge, and PPU writes reach ExRAM while
+  the board is in ExRAM nametable mode. Fill mode returns `$5106` for tiles and
+  `$5107` for attribute bytes, and the CPU sees the documented open-bus reads.
+- MMC5 PCM read mode: with `$5010` bit 0 set, PRG ROM reads feed the PCM DAC
+  and `$5011` writes are ignored.
+- VRC6 `$B003` CHR banking modes 0-3, including the 2 KB and 4 KB pairings and
+  the bit 5 PPU A10 rule, plus the cycle-counting IRQ mode (clocked per CPU
+  cycle instead of once per scanline).
+- Quattro (mapper 232): 64 KB outer bank at `$8000-$BFFF` and a 16 KB inner bank
+  at `$C000-$FFFF`.
+- PAL/Dendy header detection: PAL images run 312 scanlines, 3.2 PPU dots per
+  CPU cycle, and 50.007 frames per second, and the desktop app paces playback
+  from the detected frame rate.
+
+### Changed
+
+- MMC2/MMC4 sprite-side CHR latches are now documented correctly: sprite
+  pattern reads pass through the same latch path, so the high-bitplane fetch
+  triggers them.
+- MMC5 split-screen fine scrolling uses the bottom three bits of the split
+  counter (`$5201`), which is SL-board behaviour; CL boards need matching PPU
+  fine scroll.
+
+### Known limitations
+
+- The PPU still composes a scanline at once, so per-dot mid-scanline raster
+  tricks are not emulated.
+- Mapper 232 ignores the Aladdin submapper's swapped outer bank bits.
+- Camerica's fixed mirroring is used until Fire Hawk writes `$9000`.
+
 ## [0.4.0] - 2026-11-27
 
 ### Added
