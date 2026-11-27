@@ -132,7 +132,8 @@ fn scroll_written_through_2005_moves_the_background() {
     ppu.write_register(6, 0x3F);
     ppu.write_register(6, 0x01);
     ppu.write_register(7, 0x16);
-    ppu.write_register(0, 0); // like real games: reselect nametable 0 after VRAM setup
+    // Like real games, reselect nametable 0 after the VRAM setup.
+    ppu.write_register(0, 0);
     // Scroll X by 8 pixels, nothing else, then enable the background.
     ppu.write_register(5, 8);
     ppu.write_register(5, 0);
