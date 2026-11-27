@@ -228,6 +228,10 @@ impl Triangle {
     fn output(&self) -> u8 {
         if !self.enabled || self.length_counter == 0 || self.linear_counter == 0 {
             0
+        } else if self.timer_period < 2 {
+            // Periods this short are ultrasonic; real hardware averages them to
+            // the middle of the wave. Emitting every step would alias into pops.
+            8
         } else {
             TRIANGLE_TABLE[usize::from(self.step)]
         }
@@ -314,7 +318,7 @@ impl Noise {
             2 => {
                 self.mode = value & 0x80 != 0;
                 self.period_index = value & 0x0F;
-                self.timer_period = NOISE_PERIODS[usize::from(self.period_index)];
+                self.timer_period = NOISE_PERIODS[usize::from(self.period_index)] - 1;
             }
             3 => {
                 if self.enabled {
@@ -485,12 +489,19 @@ pub struct Apu {
     pub last_mixed: f32,
     /// Cartridge expansion audio (MMC5 or VRC6) for the current CPU cycle.
     pub expansion: f32,
+    /// Sum and count of the per-cycle mixer output since the last output sample.
+    mix_sum: f64,
+    mix_count: u32,
+    /// DC-blocking high-pass and anti-alias low-pass filter state.
+    hp_in: f32,
+    hp_out: f32,
+    lp_out: f32,
 }
 
 impl Apu {
     pub fn new(sample_rate: u32) -> Self {
         let mut noise = Noise::new();
-        noise.timer_period = NOISE_PERIODS[0];
+        noise.timer_period = NOISE_PERIODS[0] - 1;
         // The noise channel starts with its LFSR seeded; Default gives zero.
         Self {
             state: ApuState {
@@ -515,6 +526,11 @@ impl Apu {
             muted: false,
             last_mixed: 0.0,
             expansion: 0.0,
+            mix_sum: 0.0,
+            mix_count: 0,
+            hp_in: 0.0,
+            hp_out: 0.0,
+            lp_out: 0.0,
         }
     }
 
@@ -704,22 +720,33 @@ impl Apu {
     pub fn step(&mut self) {
         self.state.cycle = self.state.cycle.wrapping_add(1);
 
+        // Pulse timers tick on every second CPU cycle; the triangle, noise and
+        // DMC timers tick on every CPU cycle.
         if self.state.cycle & 1 == 0 {
             self.state.pulse1.clock_timer();
             self.state.pulse2.clock_timer();
-            self.state.triangle.clock_timer();
-            self.state.noise.clock_timer();
         }
+        self.state.triangle.clock_timer();
+        self.state.noise.clock_timer();
 
         self.state.dmc.clock_timer();
 
         self.clock_frame_sequencer();
 
         self.last_mixed = self.mix();
+        self.mix_sum += f64::from(self.last_mixed);
+        self.mix_count += 1;
         self.state.sample_accumulator += f64::from(self.sample_rate) / CPU_CLOCK_HZ;
         while self.state.sample_accumulator >= 1.0 {
             self.state.sample_accumulator -= 1.0;
-            let sample = (self.last_mixed * 2.0 - 0.35).clamp(-1.0, 1.0);
+            let average = if self.mix_count > 0 {
+                (self.mix_sum / f64::from(self.mix_count)) as f32
+            } else {
+                self.last_mixed
+            };
+            self.mix_sum = 0.0;
+            self.mix_count = 0;
+            let sample = self.filter(average);
             let sample = if self.muted {
                 0.0
             } else {
@@ -732,6 +759,21 @@ impl Apu {
             // Never let an unread queue grow without bound.
             self.state.buffer.drain(..self.sample_rate as usize);
         }
+    }
+
+    /// NES-style output stage: a ~37 Hz high-pass removes the DC offset and a
+    /// ~14 kHz low-pass tames the remaining top end.
+    fn filter(&mut self, input: f32) -> f32 {
+        let dt = 1.0 / self.sample_rate as f32;
+        let hp_rc = 1.0 / (2.0 * std::f32::consts::PI * 37.0);
+        let hp_alpha = hp_rc / (hp_rc + dt);
+        self.hp_out = hp_alpha * (self.hp_out + input - self.hp_in);
+        self.hp_in = input;
+
+        let lp_rc = 1.0 / (2.0 * std::f32::consts::PI * 14_000.0);
+        let lp_alpha = dt / (lp_rc + dt);
+        self.lp_out += lp_alpha * (self.hp_out - self.lp_out);
+        (self.lp_out * 1.6).clamp(-1.0, 1.0)
     }
 
     pub fn drain_samples(&mut self, out: &mut Vec<f32>) {

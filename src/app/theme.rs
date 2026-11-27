@@ -3,22 +3,23 @@
 use eframe::egui;
 use egui::{Color32, CornerRadius, Stroke, TextStyle, Visuals};
 
-pub const BG: Color32 = Color32::from_rgb(10, 11, 15);
-pub const SIDEBAR: Color32 = Color32::from_rgb(14, 15, 20);
-pub const PANEL: Color32 = Color32::from_rgb(17, 18, 24);
-pub const CARD: Color32 = Color32::from_rgb(22, 24, 31);
-pub const CARD_HOVER: Color32 = Color32::from_rgb(30, 33, 43);
-pub const BORDER: Color32 = Color32::from_rgb(38, 41, 52);
-pub const ACCENT: Color32 = Color32::from_rgb(99, 102, 241);
-pub const ACCENT_DIM: Color32 = Color32::from_rgb(55, 57, 140);
-pub const ACCENT_SOFT: Color32 = Color32::from_rgb(27, 28, 56);
-pub const TEXT: Color32 = Color32::from_rgb(236, 238, 245);
-pub const MUTED: Color32 = Color32::from_rgb(139, 144, 160);
+pub const BG: Color32 = Color32::from_rgb(4, 8, 22);
+pub const TOPBAR: Color32 = Color32::from_rgb(5, 9, 24);
+pub const PANEL: Color32 = Color32::from_rgb(11, 18, 42);
+pub const CARD: Color32 = Color32::from_rgb(16, 26, 56);
+pub const CARD_HOVER: Color32 = Color32::from_rgb(26, 40, 82);
+pub const BORDER: Color32 = Color32::from_rgb(38, 54, 100);
+pub const ACCENT: Color32 = Color32::from_rgb(0, 122, 255);
+pub const ACCENT_DIM: Color32 = Color32::from_rgb(0, 72, 170);
+pub const TEXT: Color32 = Color32::from_rgb(244, 247, 255);
+pub const MUTED: Color32 = Color32::from_rgb(140, 155, 190);
 pub const ERROR: Color32 = Color32::from_rgb(255, 106, 106);
 pub const OK: Color32 = Color32::from_rgb(88, 214, 141);
 
 /// Corner radius used for cards, buttons and panels.
-pub const RADIUS: CornerRadius = CornerRadius::same(8);
+pub const RADIUS: CornerRadius = CornerRadius::same(14);
+/// Fully rounded ends for buttons and tabs.
+pub const PILL: CornerRadius = CornerRadius::same(255);
 /// Square corners, used for the game picture so no pixels are clipped.
 pub const SQUARE: CornerRadius = CornerRadius::ZERO;
 
@@ -127,20 +128,63 @@ pub fn apply(ctx: &egui::Context) {
     ctx.all_styles_mut(move |target| *target = style.clone());
 }
 
+/// Primary action: a white pill like the main button on a console home screen.
 pub fn accent_button(text: impl Into<String>) -> egui::Button<'static> {
     egui::Button::new(
         egui::RichText::new(text.into())
-            .color(Color32::WHITE)
-            .strong(),
+            .font(semibold(15.0))
+            .color(Color32::from_rgb(6, 12, 32)),
     )
-    .fill(ACCENT_DIM)
-    .stroke(Stroke::new(1.0, ACCENT))
-    .corner_radius(RADIUS)
+    .fill(Color32::from_rgb(244, 247, 255))
+    .stroke(Stroke::NONE)
+    .corner_radius(PILL)
+    .min_size(egui::vec2(0.0, 40.0))
 }
 
+/// Secondary action: a translucent pill.
 pub fn ghost_button(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(egui::RichText::new(text.into()).color(TEXT))
-        .fill(CARD)
-        .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(RADIUS)
+    egui::Button::new(
+        egui::RichText::new(text.into())
+            .font(semibold(15.0))
+            .color(TEXT),
+    )
+    .fill(Color32::from_white_alpha(18))
+    .stroke(Stroke::new(1.0, Color32::from_white_alpha(46)))
+    .corner_radius(PILL)
+    .min_size(egui::vec2(0.0, 40.0))
+}
+
+/// Paints the deep-blue home-screen backdrop: a vertical gradient with a soft
+/// glow near the top right.
+pub fn paint_backdrop(painter: &egui::Painter, rect: egui::Rect) {
+    let top = Color32::from_rgb(14, 32, 86);
+    let mid = Color32::from_rgb(6, 13, 38);
+    let bottom = Color32::from_rgb(3, 5, 14);
+    let split = rect.top() + rect.height() * 0.55;
+    let mut mesh = egui::Mesh::default();
+    let mut band = |y0: f32, y1: f32, c0: Color32, c1: Color32| {
+        let i = mesh.vertices.len() as u32;
+        mesh.colored_vertex(egui::pos2(rect.left(), y0), c0);
+        mesh.colored_vertex(egui::pos2(rect.right(), y0), c0);
+        mesh.colored_vertex(egui::pos2(rect.right(), y1), c1);
+        mesh.colored_vertex(egui::pos2(rect.left(), y1), c1);
+        mesh.add_triangle(i, i + 1, i + 2);
+        mesh.add_triangle(i, i + 2, i + 3);
+    };
+    band(rect.top(), split, top, mid);
+    band(split, rect.bottom(), mid, bottom);
+    painter.add(egui::Shape::mesh(mesh));
+
+    let center = egui::pos2(
+        rect.right() - rect.width() * 0.16,
+        rect.top() + rect.height() * 0.1,
+    );
+    for step in 0..16 {
+        let radius = 70.0 + step as f32 * 30.0;
+        painter.circle_filled(
+            center,
+            radius,
+            Color32::from_rgba_unmultiplied(40, 110, 255, 4),
+        );
+    }
 }

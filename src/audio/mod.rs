@@ -10,25 +10,51 @@ use std::sync::{Arc, Mutex};
 
 pub const SAMPLE_RATE: u32 = 44_100;
 
+struct QueueState {
+    samples: VecDeque<f32>,
+    /// Last sample played, held and faded out when the queue runs dry so an
+    /// underrun makes a soft fade instead of a click.
+    last: f32,
+}
+
 pub(crate) struct SampleQueue {
-    samples: Mutex<VecDeque<f32>>,
+    state: Mutex<QueueState>,
     capacity: usize,
+    sample_rate: u32,
 }
 
 impl SampleQueue {
     fn new(sample_rate: u32) -> Self {
         Self {
-            samples: Mutex::new(VecDeque::new()),
+            state: Mutex::new(QueueState {
+                samples: VecDeque::new(),
+                last: 0.0,
+            }),
             capacity: sample_rate as usize * 2,
+            sample_rate,
         }
     }
 
+    /// Seconds of audio waiting to be played.
+    fn buffered_seconds(&self) -> f32 {
+        let len = self
+            .state
+            .lock()
+            .map(|state| state.samples.len())
+            .unwrap_or(0);
+        len as f32 / 2.0 / self.sample_rate as f32
+    }
+
     fn push(&self, samples: &[f32], volume: f32) {
-        let Ok(mut queue) = self.samples.lock() else {
+        let Ok(mut state) = self.state.lock() else {
             return;
         };
-        if queue.len() + samples.len() * 2 > self.capacity {
-            let excess = (queue.len() + samples.len() * 2).saturating_sub(self.capacity);
+        let queue = &mut state.samples;
+        // Keep at most about half a second queued. If the game outruns the
+        // device, drop whole stereo frames from the oldest end.
+        let incoming = samples.len() * 2;
+        if queue.len() + incoming > self.capacity {
+            let excess = (queue.len() + incoming - self.capacity).div_ceil(2) * 2;
             let len = queue.len();
             queue.drain(..excess.min(len));
         }
@@ -40,18 +66,28 @@ impl SampleQueue {
     }
 
     fn clear(&self) {
-        if let Ok(mut queue) = self.samples.lock() {
-            queue.clear();
+        if let Ok(mut state) = self.state.lock() {
+            state.samples.clear();
+            state.last = 0.0;
         }
     }
 
     fn fill_interleaved(&self, output: &mut [f32]) {
-        if let Ok(mut queue) = self.samples.lock() {
-            for slot in output.iter_mut() {
-                *slot = queue.pop_front().unwrap_or(0.0);
-            }
-        } else {
+        let Ok(mut state) = self.state.lock() else {
             output.fill(0.0);
+            return;
+        };
+        for slot in output.iter_mut() {
+            *slot = match state.samples.pop_front() {
+                Some(value) => {
+                    state.last = value;
+                    value
+                }
+                None => {
+                    state.last *= 0.995;
+                    state.last
+                }
+            };
         }
     }
 }
@@ -96,6 +132,11 @@ impl AudioOutput {
 
     pub fn clear(&self) {
         self.queue.clear();
+    }
+
+    /// Seconds of audio queued for playback.
+    pub fn buffered_seconds(&self) -> f32 {
+        self.queue.buffered_seconds()
     }
 
     pub fn is_active(&self) -> bool {

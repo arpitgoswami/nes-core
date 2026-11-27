@@ -37,8 +37,8 @@ enum View {
 impl View {
     fn label(self) -> &'static str {
         match self {
-            View::Library => "Library",
-            View::LoadRom => "Load ROM",
+            View::Library => "Games",
+            View::LoadRom => "Import",
             View::Settings => "Settings",
             View::SaveStates => "Save States",
             View::Achievements => "Achievements",
@@ -67,14 +67,10 @@ struct Session {
     fps: f32,
     fps_frames: u32,
     fps_since: Instant,
+    /// Seconds until the next emulated frame is due, used to schedule repaints.
+    next_wake: f64,
     audio: Vec<f32>,
     fast_forward: bool,
-}
-
-enum CardAction {
-    None,
-    Play,
-    Remove,
 }
 
 pub struct NesApp {
@@ -87,6 +83,8 @@ pub struct NesApp {
     pending_bind: Option<Button>,
     settings_dirty: bool,
     last_settings_save: Instant,
+    /// Index of the game tile highlighted on the home screen.
+    library_focus: usize,
 }
 
 impl NesApp {
@@ -109,6 +107,7 @@ impl NesApp {
             pending_bind: None,
             settings_dirty: false,
             last_settings_save: Instant::now(),
+            library_focus: 0,
         }
     }
 
@@ -182,6 +181,7 @@ impl NesApp {
                     fps: 0.0,
                     fps_frames: 0,
                     fps_since: Instant::now(),
+                    next_wake: 0.016,
                     audio: Vec::new(),
                     fast_forward: false,
                 });
@@ -379,7 +379,16 @@ impl NesApp {
             }
 
             session.accumulator += dt;
-            let step = 1.0 / session.emulator.frame_rate();
+            // Nudge emulation speed by up to 1% so the audio queue stays near
+            // 60 ms: no underruns (crackle) and no overruns (lag or dropped audio).
+            let ratio = if self.audio.is_active() && !self.settings.muted && !session.fast_forward {
+                let target = 0.06_f64;
+                let queued = f64::from(self.audio.buffered_seconds());
+                1.0 + ((target - queued) / target).clamp(-1.0, 1.0) * 0.01
+            } else {
+                1.0
+            };
+            let step = 1.0 / (session.emulator.frame_rate() * ratio);
             let max_frames = if session.fast_forward { 6 } else { 2 };
             let mut frames = 0u32;
             session.audio.clear();
@@ -403,6 +412,7 @@ impl NesApp {
             if session.accumulator > step * 4.0 {
                 session.accumulator = 0.0;
             }
+            session.next_wake = (step - session.accumulator).max(0.0);
 
             if !session.audio.is_empty() && !self.settings.muted {
                 self.audio.push_mono(&session.audio, self.settings.volume);
@@ -440,108 +450,115 @@ impl NesApp {
         self.session = Some(session);
     }
 
-    fn draw_sidebar(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::left("sidebar")
-            .exact_size(214.0)
+    fn draw_topbar(&mut self, ui: &mut egui::Ui) {
+        let mut tabs = vec![View::Library, View::LoadRom];
+        if self.session.is_some() {
+            tabs.push(View::Game);
+        }
+        tabs.extend([
+            View::SaveStates,
+            View::Achievements,
+            View::Settings,
+            View::About,
+        ]);
+        let audio_text = if !self.audio.is_active() {
+            "No audio device".to_string()
+        } else if self.settings.muted {
+            "Audio muted".to_string()
+        } else {
+            format!("Audio {:.0}%", self.settings.volume * 100.0)
+        };
+        let mut next_view = None;
+
+        egui::Panel::top("topbar")
+            .exact_size(64.0)
             .resizable(false)
-            .frame(
-                egui::Frame::default()
-                    .fill(SIDEBAR)
-                    .inner_margin(egui::Margin::symmetric(16, 18)),
-            )
+            .frame(egui::Frame::NONE.fill(TOPBAR))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
-                    ui.painter().rect_filled(rect, RADIUS, ACCENT);
-                    ui.add_space(2.0);
-                    ui.label(RichText::new("NES").size(22.0).strong().color(TEXT));
-                    ui.label(RichText::new("CORE").size(22.0).strong().color(ACCENT));
-                });
-                ui.add_space(22.0);
+                let rect = ui.max_rect();
+                let painter = ui.painter().clone();
+                let middle = rect.center().y;
+                painter.line_segment(
+                    [rect.left_bottom(), rect.right_bottom()],
+                    Stroke::new(1.0, Color32::from_white_alpha(14)),
+                );
 
-                ui.label(RichText::new("LIBRARY").size(10.0).color(MUTED));
-                ui.add_space(4.0);
-                if self.nav_button(ui, View::Library) {
-                    self.view = View::Library;
-                }
-                if self.nav_button(ui, View::LoadRom) {
-                    self.view = View::LoadRom;
-                }
+                // Logo.
+                let logo = painter.text(
+                    egui::pos2(rect.left() + 28.0, middle),
+                    Align2::LEFT_CENTER,
+                    "NES",
+                    semibold(22.0),
+                    TEXT,
+                );
+                painter.text(
+                    egui::pos2(logo.right() + 6.0, middle),
+                    Align2::LEFT_CENTER,
+                    "CORE",
+                    semibold(22.0),
+                    ACCENT,
+                );
 
-                ui.add_space(14.0);
-                ui.label(RichText::new("SESSION").size(10.0).color(MUTED));
-                ui.add_space(4.0);
-                if self.nav_button(ui, View::Game) {
-                    if self.session.is_some() {
-                        self.view = View::Game;
-                    } else {
-                        self.status = Some(StatusMessage {
-                            text: "Load a ROM first.".into(),
-                            error: true,
-                            shown_at: Instant::now(),
-                        });
+                // Status on the right.
+                painter.text(
+                    egui::pos2(rect.right() - 28.0, middle),
+                    Align2::RIGHT_CENTER,
+                    format!("{audio_text}   ·   v{VERSION}"),
+                    FontId::proportional(12.0),
+                    MUTED,
+                );
+
+                // Centered tabs.
+                let font = semibold(15.0);
+                let widths: Vec<f32> = tabs
+                    .iter()
+                    .map(|view| {
+                        painter
+                            .layout_no_wrap(view.label().to_string(), font.clone(), TEXT)
+                            .size()
+                            .x
+                            + 36.0
+                    })
+                    .collect();
+                let total: f32 = widths.iter().sum::<f32>() + 4.0 * (tabs.len() as f32 - 1.0);
+                let mut x = (rect.center().x - total / 2.0).max(logo.right() + 110.0);
+                for (index, view) in tabs.iter().enumerate() {
+                    let tab = egui::Rect::from_min_size(
+                        egui::pos2(x, middle - 19.0),
+                        Vec2::new(widths[index], 38.0),
+                    );
+                    x += widths[index] + 4.0;
+                    let response = ui.interact(
+                        tab,
+                        ui.scope_id().with(("topbar-tab", index)),
+                        Sense::click(),
+                    );
+                    let selected = self.view == *view;
+                    if selected {
+                        painter.rect_filled(tab, PILL, Color32::from_white_alpha(28));
+                    } else if response.hovered() {
+                        painter.rect_filled(tab, PILL, Color32::from_white_alpha(12));
+                    }
+                    painter.text(
+                        tab.center(),
+                        Align2::CENTER_CENTER,
+                        view.label(),
+                        font.clone(),
+                        if selected || response.hovered() {
+                            TEXT
+                        } else {
+                            MUTED
+                        },
+                    );
+                    if response.clicked() {
+                        next_view = Some(*view);
                     }
                 }
-                if self.nav_button(ui, View::SaveStates) {
-                    self.view = View::SaveStates;
-                }
-
-                ui.add_space(14.0);
-                ui.label(RichText::new("APPLICATION").size(10.0).color(MUTED));
-                ui.add_space(4.0);
-                if self.nav_button(ui, View::Settings) {
-                    self.view = View::Settings;
-                }
-                if self.nav_button(ui, View::Achievements) {
-                    self.view = View::Achievements;
-                }
-                if self.nav_button(ui, View::About) {
-                    self.view = View::About;
-                }
-
-                ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
-                    ui.label(
-                        RichText::new("Independent emulator. Not affiliated with Nintendo.")
-                            .size(10.0)
-                            .color(MUTED),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(format!("v{VERSION}")).size(11.0).color(MUTED));
-                    ui.add_space(8.0);
-                    let audio_text = if self.audio.is_active() {
-                        if self.settings.muted {
-                            "Audio muted".to_string()
-                        } else {
-                            format!("Audio {:.0}%", self.settings.volume * 100.0)
-                        }
-                    } else {
-                        "No audio device".to_string()
-                    };
-                    ui.label(RichText::new(audio_text).size(11.0).color(MUTED));
-                });
             });
-    }
 
-    fn nav_button(&self, ui: &mut egui::Ui, view: View) -> bool {
-        let selected = self.view == view;
-        let text =
-            RichText::new(view.label())
-                .size(14.0)
-                .color(if selected { TEXT } else { MUTED });
-        let button = egui::Button::new(text)
-            .fill(if selected {
-                ACCENT_SOFT
-            } else {
-                Color32::TRANSPARENT
-            })
-            .stroke(if selected {
-                Stroke::new(1.0, ACCENT_DIM)
-            } else {
-                Stroke::NONE
-            })
-            .corner_radius(RADIUS)
-            .min_size(Vec2::new(ui.available_width(), 36.0));
-        ui.add(button).clicked()
+        if let Some(view) = next_view {
+            self.view = view;
+        }
     }
 
     fn draw_view(&mut self, ui: &mut egui::Ui) {
@@ -558,211 +575,216 @@ impl NesApp {
 
     fn page(&mut self, ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut Self, &mut egui::Ui)) {
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::default()
-                    .fill(BG)
-                    .inner_margin(egui::Margin::symmetric(30, 24)),
-            )
+            .frame(egui::Frame::NONE)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(title).size(26.0).strong().color(TEXT));
-                });
-                ui.add_space(4.0);
-                ui.separator();
-                ui.add_space(12.0);
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| add(self, ui));
+                paint_backdrop(ui.painter(), ui.max_rect());
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(48, 28))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(title).font(semibold(34.0)).color(TEXT));
+                        ui.add_space(14.0);
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| add(self, ui));
+                    });
             });
     }
 
     fn draw_library(&mut self, ui: &mut egui::Ui) {
-        self.page(ui, "Library", |this, ui| this.library_body(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                paint_backdrop(ui.painter(), ui.max_rect());
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(48, 28))
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("library-page")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.library_body(ui));
+                    });
+            });
+    }
+
+    fn play_entry(&mut self, path: PathBuf) {
+        let same = self
+            .session
+            .as_ref()
+            .map(|session| session.path == path)
+            .unwrap_or(false);
+        if same {
+            self.view = View::Game;
+            if let Some(session) = self.session.as_mut() {
+                session.paused = false;
+                session.last_tick = Instant::now();
+            }
+        } else {
+            self.open_rom(path);
+        }
+    }
+
+    fn remove_entry(&mut self, path: PathBuf) {
+        self.settings.library.retain(|entry| entry.path != path);
+        let same = self
+            .session
+            .as_ref()
+            .map(|session| session.path == path)
+            .unwrap_or(false);
+        if same {
+            self.session = None;
+            self.audio.clear();
+        }
+        self.settings_dirty = true;
+        self.save_settings();
     }
 
     fn library_body(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(RichText::new("NES Core").size(42.0).strong().color(TEXT));
-                ui.label(
-                    RichText::new("A focused, open-source NES emulator.")
-                        .size(15.0)
-                        .color(MUTED),
-                );
-            });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.add(accent_button("Import ROM")).clicked() {
-                    self.open_rom_dialog();
-                }
-                if let Some(last) = self.settings.last_rom.clone() {
-                    if last.is_file() && ui.add(ghost_button("Play last")).clicked() {
-                        self.open_rom(last);
-                    }
-                }
-            });
-        });
+        let entries = self.settings.library.clone();
+        let count = entries.len();
+        self.library_focus = self.library_focus.min(count.saturating_sub(1));
 
-        ui.add_space(10.0);
-
-        if let Some((title, mapper, played)) = self.session.as_ref().map(|session| {
-            (
-                session.title.clone(),
-                session.mapper.clone(),
-                session.play_seconds,
-            )
-        }) {
-            egui::Frame::default()
-                .fill(CARD)
-                .stroke(Stroke::new(1.0, ACCENT_DIM))
-                .inner_margin(egui::Margin::same(16))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new("IN SESSION").size(10.0).color(ACCENT));
-                            ui.label(RichText::new(&title).size(18.0).strong().color(TEXT));
-                            ui.label(
-                                RichText::new(format!("{mapper} • {played:.0}s played"))
-                                    .size(12.0)
-                                    .color(MUTED),
-                            );
-                        });
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.add(accent_button("Resume")).clicked() {
-                                self.view = View::Game;
-                                if let Some(session) = self.session.as_mut() {
-                                    session.paused = false;
-                                    session.last_tick = Instant::now();
-                                }
-                            }
-                        });
-                    });
-                });
-            ui.add_space(16.0);
+        // Keyboard navigation: arrows or A/D move, Enter plays.
+        let mut moved_by_key = false;
+        let mut confirm = false;
+        if count > 0 {
+            let (left, right, enter) = ui.input(|i| {
+                (
+                    i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A),
+                    i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
+                    i.key_pressed(egui::Key::Enter),
+                )
+            });
+            if left && self.library_focus > 0 {
+                self.library_focus -= 1;
+                moved_by_key = true;
+            }
+            if right && self.library_focus + 1 < count {
+                self.library_focus += 1;
+                moved_by_key = true;
+            }
+            confirm = enter;
         }
 
-        let entries = self.settings.library.clone();
-        let mut recent: Vec<LibraryEntry> = entries
-            .iter()
-            .filter(|entry| entry.last_played.is_some())
-            .cloned()
-            .collect();
-        recent.sort_by_key(|entry| std::cmp::Reverse(entry.last_played));
-        recent.truncate(3);
-        if !recent.is_empty() {
+        let mut play: Option<PathBuf> = None;
+        let mut remove: Option<PathBuf> = None;
+        let mut import = false;
+
+        // Hero: the focused game, large, with the main action.
+        ui.add_space(8.0);
+        if let Some(entry) = entries.get(self.library_focus) {
+            let running = self
+                .session
+                .as_ref()
+                .map(|session| session.path == entry.path)
+                .unwrap_or(false);
             ui.label(
-                RichText::new("Recently played")
-                    .size(16.0)
-                    .strong()
+                RichText::new(if running { "NOW PLAYING" } else { "FEATURED" })
+                    .size(12.0)
+                    .color(ACCENT),
+            );
+            ui.label(
+                RichText::new(truncate(&entry.title, 34))
+                    .font(semibold(46.0))
                     .color(TEXT),
             );
-            ui.add_space(6.0);
-            self.card_grid(ui, &recent, 3);
-            ui.add_space(22.0);
-        }
-
-        ui.label(RichText::new("All games").size(16.0).strong().color(TEXT));
-        ui.add_space(6.0);
-
-        if entries.is_empty() {
-            egui::Frame::default()
-                .fill(PANEL)
-                .stroke(Stroke::new(1.0, BORDER))
-                .inner_margin(egui::Margin::same(28))
-                .show(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(18.0);
-                        ui.label(
-                            RichText::new("Your library is empty")
-                                .size(20.0)
-                                .strong()
-                                .color(TEXT),
-                        );
-                        ui.label(
-                            RichText::new(
-                                "Import a legally obtained .nes file, or drop one onto this window.",
-                            )
-                            .size(13.0)
-                            .color(MUTED),
-                        );
-                        ui.add_space(14.0);
-                        if ui.add(accent_button("Import ROM")).clicked() {
-                            self.open_rom_dialog();
-                        }
-                        ui.add_space(18.0);
-                    });
-                });
+            ui.label(
+                RichText::new(format!(
+                    "Mapper {} · {}   ·   {:.0} min played",
+                    entry.mapper,
+                    entry.mapper_name,
+                    entry.play_seconds / 60.0
+                ))
+                .size(14.0)
+                .color(MUTED),
+            );
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                let label = if running { "Resume" } else { "Play" };
+                if ui.add_sized([150.0, 46.0], accent_button(label)).clicked() {
+                    play = Some(entry.path.clone());
+                }
+                if ui.add(ghost_button("Add game")).clicked() {
+                    import = true;
+                }
+                if ui.add(ghost_button("Remove")).clicked() {
+                    remove = Some(entry.path.clone());
+                }
+            });
         } else {
-            self.card_grid(ui, &entries, 3);
+            ui.label(RichText::new("Welcome").font(semibold(46.0)).color(TEXT));
+            ui.label(
+                RichText::new("Add a legally obtained .nes file, or drop one onto this window.")
+                    .size(15.0)
+                    .color(MUTED),
+            );
+            ui.add_space(14.0);
+            if ui
+                .add_sized([150.0, 46.0], accent_button("Add game"))
+                .clicked()
+            {
+                import = true;
+            }
         }
 
-        ui.add_space(24.0);
+        ui.add_space(34.0);
+        ui.label(RichText::new("Games").font(semibold(18.0)).color(TEXT));
+        ui.add_space(8.0);
+
+        // The shelf of tiles.
+        let slot = Vec2::new(250.0, 340.0);
+        egui::ScrollArea::horizontal()
+            .id_salt("game-shelf")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for (index, entry) in entries.iter().enumerate() {
+                        let texture = self.art.texture(ui.ctx(), &entry.path);
+                        let (slot_rect, response) = ui.allocate_exact_size(slot, Sense::click());
+                        if response.hovered() && ui.input(|i| i.pointer.delta().length() > 0.0) {
+                            self.library_focus = index;
+                        }
+                        let focused = index == self.library_focus;
+                        if focused && moved_by_key {
+                            ui.scroll_to_rect(slot_rect, Some(Align::Center));
+                        }
+                        paint_game_tile(ui, slot_rect, entry, texture, focused);
+                        if response.clicked() {
+                            self.library_focus = index;
+                            play = Some(entry.path.clone());
+                        }
+                    }
+
+                    let (slot_rect, response) = ui.allocate_exact_size(slot, Sense::click());
+                    paint_add_tile(ui, slot_rect, response.hovered());
+                    if response.clicked() {
+                        import = true;
+                    }
+                });
+            });
+
+        ui.add_space(10.0);
         ui.label(
             RichText::new(
-                "NES Core ships with no ROMs or artwork. Only add games you are allowed to use.",
+                "NES Core ships with no ROMs or artwork. Only add games you are allowed to use.   \
+                 Arrow keys or A/D to browse · Enter to play",
             )
             .size(11.0)
             .color(MUTED),
         );
-    }
 
-    fn card_grid(&mut self, ui: &mut egui::Ui, entries: &[LibraryEntry], columns: usize) {
-        let spacing = 16.0;
-        let total = ui.available_width();
-        let width = ((total - spacing * (columns as f32 - 1.0)) / columns as f32).max(190.0);
-        let mut action: Option<(CardAction, PathBuf)> = None;
-
-        egui::Grid::new(format!("grid-{}", entries.len()))
-            .num_columns(columns)
-            .spacing([spacing, spacing])
-            .show(ui, |ui| {
-                for (index, entry) in entries.iter().enumerate() {
-                    let texture = self.art.texture(ui.ctx(), &entry.path);
-                    let result = library_card(ui, entry, texture, width);
-                    match result {
-                        CardAction::Play => action = Some((CardAction::Play, entry.path.clone())),
-                        CardAction::Remove => {
-                            action = Some((CardAction::Remove, entry.path.clone()))
-                        }
-                        CardAction::None => {}
-                    }
-                    if (index + 1) % columns == 0 {
-                        ui.end_row();
-                    }
-                }
-            });
-
-        match action {
-            Some((CardAction::Play, path)) => {
-                if self
-                    .session
-                    .as_ref()
-                    .map(|session| session.path == path)
-                    .unwrap_or(false)
-                {
-                    self.view = View::Game;
-                    if let Some(session) = self.session.as_mut() {
-                        session.paused = false;
-                        session.last_tick = Instant::now();
-                    }
-                } else {
-                    self.open_rom(path);
-                }
-            }
-            Some((CardAction::Remove, path)) => {
-                self.settings.library.retain(|entry| entry.path != path);
-                if self
-                    .session
-                    .as_ref()
-                    .map(|session| session.path == path)
-                    .unwrap_or(false)
-                {
-                    self.session = None;
-                    self.audio.clear();
-                }
-                self.settings_dirty = true;
-                self.save_settings();
-            }
-            _ => {}
+        if confirm && play.is_none() {
+            play = entries
+                .get(self.library_focus)
+                .map(|entry| entry.path.clone());
+        }
+        if import {
+            self.open_rom_dialog();
+        }
+        if let Some(path) = remove {
+            self.remove_entry(path);
+        } else if let Some(path) = play {
+            self.play_entry(path);
         }
     }
 
@@ -1468,7 +1490,7 @@ impl NesApp {
                 (
                     "Cartridges",
                     "iNES and NES 2.0 headers, PRG/CHR mapping, PRG RAM and battery-backed \
-                     RAM in memory, and 42 mappers (see Library > Load ROM for the list).",
+                     RAM in memory, and 42 mappers (see the Import page for the list).",
                 ),
                 (
                     "Desktop features",
@@ -1478,7 +1500,7 @@ impl NesApp {
                 ),
                 (
                     "Known limitations",
-                    "No gamepad input, no rewinding, no netplay, no PAL timing and no per-dot \
+                    "No gamepad input, no rewinding, no netplay and no per-dot \
                      mid-scanline raster effects. MMC5 and VRC6 expansion audio, MMC5 fill \
                      mode and PAL timing are emulated; per-dot raster tricks are not. Some \
                      games are not compatible; see the notes in the repository.",
@@ -1549,7 +1571,7 @@ impl eframe::App for NesApp {
 
         let hide_chrome = self.settings.fullscreen && self.view == View::Game;
         if !hide_chrome {
-            self.draw_sidebar(ui);
+            self.draw_topbar(ui);
         }
         self.draw_view(ui);
 
@@ -1561,13 +1583,16 @@ impl eframe::App for NesApp {
             self.save_settings();
         }
 
-        if self
-            .session
-            .as_ref()
-            .map(|session| !session.paused)
-            .unwrap_or(false)
-        {
-            ctx.request_repaint();
+        if let Some(session) = self.session.as_ref().filter(|session| !session.paused) {
+            if session.fast_forward {
+                ctx.request_repaint();
+            } else {
+                // Wake just in time for the next emulated frame instead of
+                // repainting as fast as possible: this caps the app at the
+                // console's frame rate (about 60 FPS) and saves CPU.
+                let wait = session.next_wake.clamp(0.0005, 0.017);
+                ctx.request_repaint_after(Duration::from_secs_f64(wait));
+            }
         } else {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
@@ -1630,53 +1655,64 @@ fn truncate(text: &str, max: usize) -> String {
     result
 }
 
-fn library_card(
+/// Draws one game tile. The focused tile is larger and gets a bright outline
+/// and glow; the others sit slightly smaller and dimmer.
+fn paint_game_tile(
     ui: &mut egui::Ui,
+    slot: egui::Rect,
     entry: &LibraryEntry,
     texture: Option<egui::TextureHandle>,
-    width: f32,
-) -> CardAction {
-    let height = 194.0;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
-    let hovered = response.hovered();
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS, if hovered { CARD_HOVER } else { CARD });
-    painter.rect_stroke(
-        rect,
-        RADIUS,
-        Stroke::new(1.0, if hovered { ACCENT_DIM } else { BORDER }),
-        egui::StrokeKind::Inside,
-    );
+    focused: bool,
+) {
+    let painter = ui.painter_at(slot.expand(14.0));
+    let size = if focused {
+        Vec2::new(226.0, 268.0)
+    } else {
+        Vec2::new(198.0, 236.0)
+    };
+    let tile = egui::Rect::from_center_size(egui::pos2(slot.center().x, slot.top() + 150.0), size);
+    let radius = egui::CornerRadius::same(18);
 
-    let art_rect = egui::Rect::from_min_size(
-        rect.min + Vec2::splat(8.0),
-        Vec2::new(rect.width() - 16.0, 108.0),
-    );
-    painter.rect_filled(art_rect, RADIUS, Color32::from_rgb(8, 12, 20));
+    if focused {
+        for layer in 1..=6u8 {
+            let grow = f32::from(layer) * 2.5;
+            painter.rect_stroke(
+                tile.expand(grow),
+                egui::CornerRadius::same(18 + layer * 2),
+                Stroke::new(
+                    2.0,
+                    Color32::from_rgba_unmultiplied(70, 140, 255, 44 - layer * 6),
+                ),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    let accent = artwork::accent_for(entry.rom_id);
+    painter.rect_filled(tile, radius, accent.gamma_multiply(0.28));
     if let Some(texture) = texture {
+        // Fill the portrait tile from the middle of the landscape cover.
+        let aspect = tile.width() / tile.height();
+        let source = texture.size_vec2();
+        let visible = (aspect / (source.x / source.y)).clamp(0.1, 1.0);
+        let u0 = (1.0 - visible) / 2.0;
         painter.image(
             texture.id(),
-            art_rect,
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            tile.shrink(2.0),
+            egui::Rect::from_min_max(egui::pos2(u0, 0.0), egui::pos2(u0 + visible, 1.0)),
             Color32::WHITE,
         );
     } else {
-        let accent = artwork::accent_for(entry.rom_id);
-        painter.rect_filled(
-            egui::Rect::from_min_size(art_rect.min, Vec2::new(5.0, art_rect.height())),
-            RADIUS,
-            accent,
+        painter.circle_filled(
+            tile.center() + Vec2::new(0.0, -20.0),
+            tile.width() * 0.34,
+            accent.gamma_multiply(0.45),
         );
-        for row in 0..4 {
-            for column in 0..10 {
-                let x = art_rect.left() + 18.0 + column as f32 * 20.0;
-                let y = art_rect.top() + 16.0 + row as f32 * 20.0;
-                let block = egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(14.0, 14.0));
-                if (row + column) % 3 == 0 {
-                    painter.rect_filled(block, RADIUS, Color32::from_rgb(20, 28, 42));
-                }
-            }
-        }
+        painter.circle_filled(
+            tile.center() + Vec2::new(0.0, -20.0),
+            tile.width() * 0.22,
+            accent.gamma_multiply(0.75),
+        );
         let initial = entry
             .title
             .chars()
@@ -1685,67 +1721,80 @@ fn library_card(
             .to_uppercase()
             .to_string();
         painter.text(
-            art_rect.center(),
+            tile.center() + Vec2::new(0.0, -20.0),
             Align2::CENTER_CENTER,
             initial,
-            FontId::proportional(44.0),
-            accent,
+            semibold(if focused { 64.0 } else { 56.0 }),
+            Color32::WHITE,
         );
         painter.text(
-            art_rect.left_bottom() + Vec2::new(12.0, -8.0),
+            tile.left_bottom() + Vec2::new(16.0, -14.0),
             Align2::LEFT_BOTTOM,
             "NES",
-            FontId::proportional(9.0),
-            MUTED,
+            semibold(12.0),
+            Color32::from_white_alpha(150),
         );
     }
-
-    painter.text(
-        egui::pos2(rect.left() + 12.0, art_rect.bottom() + 10.0),
-        Align2::LEFT_TOP,
-        truncate(&entry.title, 28),
-        FontId::proportional(14.0),
-        TEXT,
-    );
-    painter.text(
-        egui::pos2(rect.left() + 12.0, art_rect.bottom() + 32.0),
-        Align2::LEFT_TOP,
-        format!("Mapper {} · {}", entry.mapper, entry.mapper_name),
-        FontId::proportional(10.5),
-        MUTED,
-    );
-    painter.text(
-        egui::pos2(rect.left() + 12.0, art_rect.bottom() + 50.0),
-        Align2::LEFT_TOP,
-        format!("{:.0}s played", entry.play_seconds),
-        FontId::proportional(10.0),
-        MUTED,
-    );
-
-    let play_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - 78.0, rect.bottom() - 38.0),
-        Vec2::new(66.0, 26.0),
-    );
-    let play = ui.put(play_rect, accent_button("Play"));
-    let remove_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - 30.0, rect.top() + 14.0),
-        Vec2::new(20.0, 20.0),
-    );
-    let remove = ui.put(
-        remove_rect,
-        egui::Button::new(RichText::new("×").size(15.0).color(MUTED))
-            .fill(Color32::from_rgba_unmultiplied(8, 12, 20, 200))
-            .stroke(Stroke::NONE)
-            .corner_radius(RADIUS),
-    );
-
-    if play.clicked() {
-        CardAction::Play
-    } else if remove.clicked() {
-        CardAction::Remove
-    } else if response.clicked() {
-        CardAction::Play
-    } else {
-        CardAction::None
+    if !focused {
+        painter.rect_filled(tile, radius, Color32::from_black_alpha(70));
     }
+    painter.rect_stroke(
+        tile,
+        radius,
+        if focused {
+            Stroke::new(3.0, Color32::WHITE)
+        } else {
+            Stroke::new(1.0, Color32::from_white_alpha(24))
+        },
+        egui::StrokeKind::Inside,
+    );
+
+    painter.text(
+        egui::pos2(tile.center().x, tile.bottom() + 16.0),
+        Align2::CENTER_TOP,
+        truncate(&entry.title, 24),
+        if focused {
+            semibold(15.0)
+        } else {
+            FontId::proportional(13.0)
+        },
+        if focused { TEXT } else { MUTED },
+    );
+}
+
+fn paint_add_tile(ui: &mut egui::Ui, slot: egui::Rect, hovered: bool) {
+    let painter = ui.painter_at(slot.expand(14.0));
+    let tile = egui::Rect::from_center_size(
+        egui::pos2(slot.center().x, slot.top() + 150.0),
+        Vec2::new(198.0, 236.0),
+    );
+    let radius = egui::CornerRadius::same(18);
+    painter.rect_filled(
+        tile,
+        radius,
+        Color32::from_white_alpha(if hovered { 22 } else { 10 }),
+    );
+    painter.rect_stroke(
+        tile,
+        radius,
+        Stroke::new(
+            if hovered { 2.0 } else { 1.0 },
+            Color32::from_white_alpha(if hovered { 140 } else { 40 }),
+        ),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        tile.center() + Vec2::new(0.0, -10.0),
+        Align2::CENTER_CENTER,
+        "+",
+        semibold(56.0),
+        if hovered { TEXT } else { MUTED },
+    );
+    painter.text(
+        tile.center() + Vec2::new(0.0, 36.0),
+        Align2::CENTER_CENTER,
+        "Add game",
+        FontId::proportional(14.0),
+        if hovered { TEXT } else { MUTED },
+    );
 }
