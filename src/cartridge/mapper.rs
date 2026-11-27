@@ -3,11 +3,17 @@
 use serde::{Deserialize, Serialize};
 
 use super::audio::{Mmc5Audio, Vrc6Audio};
+use super::extra::{ExtraState, Geometry, EXTRA_MAPPERS};
 use super::Mirroring;
 
 /// Mappers implemented by NES Core. Support is listed in the README and is only
 /// claimed for titles that have actually been exercised.
-pub const SUPPORTED_MAPPERS: [u16; 15] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66, 71, 232];
+pub const CORE_MAPPERS: [u16; 15] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66, 71, 232];
+
+/// True when NES Core has an implementation for iNES mapper `number`.
+pub fn is_supported(number: u16) -> bool {
+    CORE_MAPPERS.contains(&number) || EXTRA_MAPPERS.contains(&number)
+}
 
 /// MMC5 keeps 1 KB of internal extended RAM mirrored at `$5C00-$5FFF`.
 pub const MMC5_EXRAM_LEN: usize = 1024;
@@ -25,7 +31,7 @@ pub struct Mmc1State {
 impl Default for Mmc1State {
     fn default() -> Self {
         Self {
-            shift: 0x10,
+            shift: 0,
             count: 0,
             control: 0x0C,
             chr_bank0: 0,
@@ -361,6 +367,7 @@ pub enum MapperState {
         outer: u8,
         inner: u8,
     },
+    Extra(ExtraState),
 }
 
 #[derive(Debug, Clone)]
@@ -397,6 +404,7 @@ pub enum Mapper {
         outer: u8,
         inner: u8,
     },
+    Extra(ExtraState),
 }
 
 impl Mapper {
@@ -428,6 +436,7 @@ impl Mapper {
                 single_screen: None,
             },
             232 => Mapper::Quattro { outer: 0, inner: 0 },
+            n if EXTRA_MAPPERS.contains(&n) => Mapper::Extra(ExtraState::new(n)),
             _ => Mapper::Nrom,
         }
     }
@@ -451,6 +460,7 @@ impl Mapper {
             Mapper::Camerica { .. } => 71,
             Mapper::Quattro { .. } => 232,
             Mapper::Mmc5(_) => 5,
+            Mapper::Extra(state) => state.number(),
             Mapper::Axrom { .. } => 7,
             Mapper::Vrc6(state) => {
                 if state.variant_b {
@@ -481,6 +491,7 @@ impl Mapper {
             Mapper::Camerica { .. } => "Camerica (71)",
             Mapper::Quattro { .. } => "Quattro (232)",
             Mapper::Mmc5(_) => "MMC5 (5)",
+            Mapper::Extra(state) => state.name(),
             Mapper::Axrom { .. } => "AxROM (7)",
             Mapper::Vrc6(state) => {
                 if state.variant_b {
@@ -497,11 +508,20 @@ impl Mapper {
         addr: u16,
         value: u8,
         prg_banks_8k: usize,
-        _chr_banks_1k: usize,
-        _chr_is_ram: bool,
+        chr_banks_1k: usize,
+        chr_is_ram: bool,
     ) {
         match self {
             Mapper::Nrom => {}
+            Mapper::Extra(state) => state.write_prg(
+                addr,
+                value,
+                Geometry {
+                    prg_8k: prg_banks_8k,
+                    chr_1k: chr_banks_1k,
+                    chr_ram: chr_is_ram,
+                },
+            ),
             Mapper::Uxrom { bank } => {
                 let mask = (prg_banks_8k.saturating_mul(2).max(1) - 1) as u8;
                 *bank = (value & 0x0F) & mask.min(0x0F);
@@ -516,7 +536,7 @@ impl Mapper {
             }
             Mapper::Mmc1(state) => {
                 if value & 0x80 != 0 {
-                    state.shift = 0x10;
+                    state.shift = 0;
                     state.count = 0;
                     state.control |= 0x0C;
                     return;
@@ -531,7 +551,7 @@ impl Mapper {
                         2 => state.chr_bank1 = v,
                         _ => state.prg_bank = v,
                     }
-                    state.shift = 0x10;
+                    state.shift = 0;
                     state.count = 0;
                 }
             }
@@ -649,6 +669,13 @@ impl Mapper {
         }
     }
 
+    /// Register writes below `$8000` for mappers that decode them.
+    pub fn write_low(&mut self, addr: u16, value: u8, g: Geometry) {
+        if let Mapper::Extra(state) = self {
+            state.write_low(addr, value, g);
+        }
+    }
+
     /// MMC5 register window (`$5000-$5FFF`).
     pub fn write_register(&mut self, addr: u16, value: u8) {
         let Mapper::Mmc5(state) = self else {
@@ -743,6 +770,7 @@ impl Mapper {
                     Mirroring::OneScreenLower
                 }
             }),
+            Mapper::Extra(state) => state.mirroring,
             // MMC5 nametables are mapped per table in `Cartridge::nametable_index`.
             _ => None,
         }
@@ -754,6 +782,7 @@ impl Mapper {
             Mapper::Mmc3(state) => state.clock_irq(),
             Mapper::Mmc5(state) => state.clock_scanline(),
             Mapper::Vrc6(state) if state.irq_enabled && !state.irq_mode_cycle => state.clock_irq(),
+            Mapper::Extra(state) => state.clock_scanline(),
             _ => {}
         }
     }
@@ -763,6 +792,7 @@ impl Mapper {
             Mapper::Mmc3(state) => state.irq_pending,
             Mapper::Mmc5(state) => state.irq_pending || state.audio.irq_pending(),
             Mapper::Vrc6(state) => state.irq_pending,
+            Mapper::Extra(state) => state.irq_pending,
             _ => false,
         }
     }
@@ -794,10 +824,10 @@ impl Mapper {
 
     /// Cycle-mode IRQ for VRC6. Scanline mode is clocked from `on_scanline`.
     pub fn clock_cpu(&mut self) {
-        if let Mapper::Vrc6(state) = self {
-            if state.irq_mode_cycle {
-                state.clock_cycle();
-            }
+        match self {
+            Mapper::Vrc6(state) if state.irq_mode_cycle => state.clock_cycle(),
+            Mapper::Extra(state) => state.clock_cpu(),
+            _ => {}
         }
     }
 
@@ -863,6 +893,7 @@ impl Mapper {
                 outer: *outer,
                 inner: *inner,
             },
+            Mapper::Extra(state) => MapperState::Extra(state.clone()),
         }
     }
 
@@ -911,6 +942,9 @@ impl Mapper {
             (Mapper::Quattro { outer, inner }, MapperState::Quattro { outer: o, inner: i }) => {
                 *outer = o;
                 *inner = i;
+            }
+            (Mapper::Extra(current), MapperState::Extra(saved)) if saved.kind == current.kind => {
+                *current = saved;
             }
             (Mapper::Nrom, MapperState::Nrom) => {}
             _ => {}

@@ -19,7 +19,7 @@ fn main() -> eframe::Result<()> {
             .with_inner_size([1320.0, 860.0])
             .with_min_inner_size([1000.0, 660.0])
             .with_title("NES Core")
-            .with_fullscreen(settings.fullscreen),
+            .with_fullscreen(false),
         wgpu_options,
         ..Default::default()
     };

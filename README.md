@@ -26,7 +26,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
 | APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
-| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3 (incl. scanline IRQ), 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6, 66 GxROM, 71 Camerica, 232 Quattro |
+| Mappers | Partial | 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3, 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 16/159 Bandai FCG, 21/22/23/25 VRC2/VRC4, 24/26 VRC6, 33 Taito TC0190, 34 BNROM/NINA-001, 66 GxROM, 69 FME-7, 70/152 Bandai, 71 Camerica, 75 VRC1, 78 Irem, 79/113/146 NINA-03/06, 85 VRC7, 87 Jaleco, 88/154/206 Namco 118, 89/93 Sunsoft-2, 94 UN1ROM, 140 Jaleco, 180 UNROM, 184 Sunsoft-1, 232 Quattro (42 mappers; unlisted mappers report a clear error) |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
 | Save states | Implemented | Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes |
 | Settings and library | Implemented | Persisted in the per-user configuration directory |
@@ -163,11 +163,11 @@ Default keyboard bindings (all rebindable in Settings):
 
 | NES button | Key |
 | --- | --- |
-| D-pad | Arrow keys |
-| A | X |
-| B | Z |
-| Start | S |
-| Select | A |
+| D-pad | W A S D |
+| A | K |
+| B | J |
+| Start | Enter |
+| Select | Backspace |
 
 Emulator shortcuts:
 
@@ -192,14 +192,14 @@ controller shift register and save states.
 
 It has **not** been validated against a broad library of commercial games, and
 no game-specific compatibility claims are made. Mapper coverage
-(0/1/2/3/4/5/7/9/10/11/24/26/66/71/232) and the PPU's scanline-granular
+(42 mappers, see the table above) and the PPU's scanline-granular
 rendering are the main practical limits. Both NTSC and PAL timing are supported. Bug
 reports that include a legally redistributable test ROM are the most useful
 kind.
 
 ## Roadmap
 
-- More mappers (69 Sunsoft FME-7, 88, 118, 119, 180, 184)
+- More mappers (18, 19, 64, 65, 67, 68, 118, 119, 210 and multicarts); VRC7 and FME-7 expansion audio
 - MMC5 fill-mode and ExRAM nametables, PCM read mode and finer split-screen timing
 - Per-dot PPU rendering for exact raster effects
 - Gamepad support (SDL/`gilrs`) and configurable controller ports

@@ -90,7 +90,8 @@ pub struct NesApp {
 }
 
 impl NesApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, settings: Settings) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, mut settings: Settings) -> Self {
+        settings.fullscreen = false;
         theme::apply(&cc.egui_ctx);
         let audio = AudioOutput::new(SAMPLE_RATE);
         let status = audio.error.as_ref().map(|message| StatusMessage {
@@ -323,6 +324,8 @@ impl NesApp {
         if fullscreen {
             let value = !self.settings.fullscreen;
             self.set_fullscreen(ctx, value);
+        } else if self.settings.fullscreen && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.set_fullscreen(ctx, false);
         }
         if self.view == View::Game {
             if let Some(session) = self.session.as_mut() {
@@ -449,7 +452,7 @@ impl NesApp {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
-                    ui.painter().rect_filled(rect, ZERO, ACCENT);
+                    ui.painter().rect_filled(rect, RADIUS, ACCENT);
                     ui.add_space(2.0);
                     ui.label(RichText::new("NES").size(22.0).strong().color(TEXT));
                     ui.label(RichText::new("CORE").size(22.0).strong().color(ACCENT));
@@ -536,7 +539,7 @@ impl NesApp {
             } else {
                 Stroke::NONE
             })
-            .corner_radius(ZERO)
+            .corner_radius(RADIUS)
             .min_size(Vec2::new(ui.available_width(), 36.0));
         ui.add(button).clicked()
     }
@@ -800,9 +803,7 @@ impl NesApp {
                     );
                     ui.label(
                         RichText::new(
-                            "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · \
-                             9 MMC2 · 10 MMC4 · 11 Color Dreams · 24/26 VRC6 · 66 GxROM · \
-                             71 Camerica · 232 Quattro",
+                            "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 16/159 Bandai FCG · 21/22/23/25 VRC2/VRC4 · 24/26 VRC6 · 33 Taito TC0190 · 34 BNROM/NINA-001 · 66 GxROM · 69 FME-7 · 70/152 Bandai · 71 Camerica · 75 VRC1 · 78 Irem · 79/113/146 NINA-03/06 · 85 VRC7 · 87 Jaleco · 88/154/206 Namco 118 · 89/93 Sunsoft-2 · 94 UN1ROM · 140 Jaleco · 180 UNROM · 184 Sunsoft-1 · 232 Quattro",
                         )
                         .size(12.0)
                         .color(MUTED),
@@ -942,15 +943,16 @@ impl NesApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(BG)
-                    .inner_margin(egui::Margin::same(16)),
+                    .fill(if fullscreen { Color32::BLACK } else { BG })
+                    .inner_margin(egui::Margin::same(if fullscreen { 0 } else { 16 })),
             )
             .show(ui, |ui| {
                 let Some(session) = self.session.as_mut() else {
                     return;
                 };
                 let available = ui.available_size();
-                let bottom = 46.0;
+                let bottom = if fullscreen { 0.0 } else { 46.0 };
+                let pad = if fullscreen { 0.0 } else { 16.0 };
                 let stage_height = (available.y - bottom).max(120.0);
                 let (rect, _) =
                     ui.allocate_exact_size(Vec2::new(available.x, stage_height), Sense::hover());
@@ -960,10 +962,10 @@ impl NesApp {
                 } else {
                     256.0 / 240.0
                 };
-                let mut width = rect.width() - 16.0;
+                let mut width = rect.width() - pad;
                 let mut height = width / ratio;
-                if height > rect.height() - 16.0 {
-                    height = rect.height() - 16.0;
+                if height > rect.height() - pad {
+                    height = rect.height() - pad;
                     width = height * ratio;
                 }
                 if self.settings.integer_scaling {
@@ -978,8 +980,8 @@ impl NesApp {
                         256.0 * scale
                     };
                     height = 240.0 * scale;
-                    if height > rect.height() - 16.0 {
-                        let fit = ((rect.height() - 16.0) / 240.0).max(1.0);
+                    if height > rect.height() - pad {
+                        let fit = ((rect.height() - pad) / 240.0).max(1.0);
                         height = 240.0 * fit;
                         width = if self.settings.pixel_aspect {
                             256.0 * fit * 8.0 / 7.0
@@ -1006,7 +1008,7 @@ impl NesApp {
 
                 let stage = egui::Rect::from_center_size(rect.center(), Vec2::new(width, height));
                 ui.painter()
-                    .rect_filled(rect, ZERO, Color32::from_rgb(4, 6, 11));
+                    .rect_filled(rect, SQUARE, Color32::from_rgb(0, 0, 0));
                 if let Some(texture) = session.texture.as_ref() {
                     ui.painter().image(
                         texture.id(),
@@ -1015,28 +1017,35 @@ impl NesApp {
                         Color32::WHITE,
                     );
                 }
-                ui.painter().rect_stroke(
-                    stage,
-                    ZERO,
-                    Stroke::new(1.0, BORDER),
-                    egui::StrokeKind::Inside,
-                );
+                if !fullscreen {
+                    ui.painter().rect_stroke(
+                        stage,
+                        SQUARE,
+                        Stroke::new(1.0, BORDER),
+                        egui::StrokeKind::Inside,
+                    );
+                }
 
                 if session.paused {
                     ui.painter().rect_filled(
                         stage,
-                        ZERO,
+                        SQUARE,
                         Color32::from_rgba_unmultiplied(4, 7, 12, 170),
                     );
-                    ui.painter().text(
-                        stage.center(),
-                        Align2::CENTER_CENTER,
-                        "PAUSED",
-                        FontId::proportional(24.0),
-                        TEXT,
-                    );
+                    if !fullscreen {
+                        ui.painter().text(
+                            stage.center(),
+                            Align2::CENTER_CENTER,
+                            "PAUSED",
+                            semibold(24.0),
+                            TEXT,
+                        );
+                    }
                 }
 
+                if fullscreen {
+                    return;
+                }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     let state = if session.paused { "Paused" } else { "Running" };
@@ -1071,14 +1080,14 @@ impl NesApp {
                                 )
                                 .fill(Color32::TRANSPARENT)
                                 .stroke(Stroke::NONE)
-                                .corner_radius(ZERO),
+                                .corner_radius(RADIUS),
                             )
                             .clicked()
                         {
                             back = true;
                         }
                         ui.label(
-                            RichText::new("Space pause · F2 reset · F5/F8 slots · F11 fullscreen")
+                            RichText::new("Space pause · F2 reset · F5/F8 slots · F11 fullscreen · WASD move · K A · J B")
                                 .size(11.0)
                                 .color(MUTED),
                         );
@@ -1393,7 +1402,7 @@ impl NesApp {
                                 ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                             ui.painter().rect_filled(
                                 rect,
-                                ZERO,
+                                RADIUS,
                                 if record.is_some() { ACCENT } else { BORDER },
                             );
                             ui.vertical(|ui| {
@@ -1459,8 +1468,7 @@ impl NesApp {
                 (
                     "Cartridges",
                     "iNES and NES 2.0 headers, PRG/CHR mapping, PRG RAM and battery-backed \
-                     RAM in memory, and mappers 0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26,\
-                     66 and 71.",
+                     RAM in memory, and 42 mappers (see Library > Load ROM for the list).",
                 ),
                 (
                     "Desktop features",
@@ -1545,30 +1553,9 @@ impl eframe::App for NesApp {
         }
         self.draw_view(ui);
 
-        if hide_chrome {
-            egui::Area::new(egui::Id::unique("fullscreen-overlay"))
-                .anchor(Align2::RIGHT_TOP, [-18.0, 14.0])
-                .order(egui::Order::Foreground)
-                .show(&ctx, |ui| {
-                    egui::Frame::default()
-                        .fill(Color32::from_rgba_unmultiplied(7, 10, 17, 220))
-                        .inner_margin(egui::Margin::symmetric(12, 8))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new("F11 exit fullscreen · Esc pause")
-                                        .size(11.0)
-                                        .color(MUTED),
-                                );
-                                if ui.add(ghost_button("Exit")).clicked() {
-                                    self.set_fullscreen(&ctx.clone(), false);
-                                }
-                            });
-                        });
-                });
+        if !hide_chrome {
+            self.draw_toast(&ctx);
         }
-
-        self.draw_toast(&ctx);
 
         if self.settings_dirty && self.last_settings_save.elapsed() > Duration::from_secs(2) {
             self.save_settings();
@@ -1653,10 +1640,10 @@ fn library_card(
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let hovered = response.hovered();
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, ZERO, if hovered { CARD_HOVER } else { CARD });
+    painter.rect_filled(rect, RADIUS, if hovered { CARD_HOVER } else { CARD });
     painter.rect_stroke(
         rect,
-        ZERO,
+        RADIUS,
         Stroke::new(1.0, if hovered { ACCENT_DIM } else { BORDER }),
         egui::StrokeKind::Inside,
     );
@@ -1665,7 +1652,7 @@ fn library_card(
         rect.min + Vec2::splat(8.0),
         Vec2::new(rect.width() - 16.0, 108.0),
     );
-    painter.rect_filled(art_rect, ZERO, Color32::from_rgb(8, 12, 20));
+    painter.rect_filled(art_rect, RADIUS, Color32::from_rgb(8, 12, 20));
     if let Some(texture) = texture {
         painter.image(
             texture.id(),
@@ -1677,7 +1664,7 @@ fn library_card(
         let accent = artwork::accent_for(entry.rom_id);
         painter.rect_filled(
             egui::Rect::from_min_size(art_rect.min, Vec2::new(5.0, art_rect.height())),
-            ZERO,
+            RADIUS,
             accent,
         );
         for row in 0..4 {
@@ -1686,7 +1673,7 @@ fn library_card(
                 let y = art_rect.top() + 16.0 + row as f32 * 20.0;
                 let block = egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(14.0, 14.0));
                 if (row + column) % 3 == 0 {
-                    painter.rect_filled(block, ZERO, Color32::from_rgb(20, 28, 42));
+                    painter.rect_filled(block, RADIUS, Color32::from_rgb(20, 28, 42));
                 }
             }
         }
@@ -1749,7 +1736,7 @@ fn library_card(
         egui::Button::new(RichText::new("×").size(15.0).color(MUTED))
             .fill(Color32::from_rgba_unmultiplied(8, 12, 20, 200))
             .stroke(Stroke::NONE)
-            .corner_radius(ZERO),
+            .corner_radius(RADIUS),
     );
 
     if play.clicked() {

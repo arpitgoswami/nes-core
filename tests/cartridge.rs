@@ -42,10 +42,10 @@ fn rejects_truncated_prg() {
 
 #[test]
 fn rejects_unsupported_mapper() {
-    let rom = ines(&vec![0; 16384], &[], 69, 0);
+    let rom = ines(&vec![0; 16384], &[], 19, 0);
     assert_eq!(
         Cartridge::from_bytes(&rom).unwrap_err(),
-        RomError::UnsupportedMapper(69)
+        RomError::UnsupportedMapper(19)
     );
 }
 
@@ -142,10 +142,10 @@ fn mmc3_switches_prg_and_raises_irq() {
     prg[0] = 0x11;
     prg[0x2000] = 0x33;
     let mut cart = Cartridge::from_bytes(&ines(&prg, &[], 4, 0)).unwrap();
-    // Register 7 selects the 8KB bank mapped at $C000 in the default mode.
+    // Register 7 selects the 8KB bank mapped at $A000 in the default mode.
     cart.cpu_write(0x8000, 7);
     cart.cpu_write(0x8001, 1);
-    assert_eq!(cart.cpu_read(0xC000), 0x33);
+    assert_eq!(cart.cpu_read(0xA000), 0x33);
 
     // Latch 2, reload, enable; the third scanline raises IRQ.
     cart.cpu_write(0xC000, 2);

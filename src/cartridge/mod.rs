@@ -1,6 +1,7 @@
 //! iNES cartridge images and the mappers NES Core supports.
 
 mod audio;
+mod extra;
 mod mapper;
 
 pub use mapper::{Mapper, MapperState, Mmc5Render};
@@ -165,7 +166,7 @@ impl Cartridge {
             Mirroring::Horizontal
         };
 
-        let supported = mapper::SUPPORTED_MAPPERS.contains(&mapper);
+        let supported = mapper::is_supported(mapper);
         if !supported {
             return Err(RomError::UnsupportedMapper(mapper));
         }
@@ -325,6 +326,13 @@ impl Cartridge {
     }
 
     pub fn cpu_write(&mut self, addr: u16, value: u8) {
+        if addr < 0x8000 && matches!(self.mapper, Mapper::Extra(_)) {
+            let geometry = self.geometry();
+            self.mapper.write_low(addr, value, geometry);
+            if let Some(mirroring) = self.mapper.forced_mirroring() {
+                self.mirroring = mirroring;
+            }
+        }
         match addr {
             0x5000..=0x5FFF => self.mapper.write_register(addr, value),
             0x6000..=0x7FFF => {
@@ -333,15 +341,27 @@ impl Cartridge {
                 }
             }
             0x8000..=0xFFFF => {
-                let prg_banks = (self.prg_rom.len() / 0x2000).max(1);
-                let chr_banks_1k = (self.chr_memory.len() / 0x400).max(1);
-                self.mapper
-                    .write_prg(addr, value, prg_banks, chr_banks_1k, self.chr_is_ram);
+                let geometry = self.geometry();
+                self.mapper.write_prg(
+                    addr,
+                    value,
+                    geometry.prg_8k,
+                    geometry.chr_1k,
+                    geometry.chr_ram,
+                );
                 if let Some(mirroring) = self.mapper.forced_mirroring() {
                     self.mirroring = mirroring;
                 }
             }
             _ => {}
+        }
+    }
+
+    fn geometry(&self) -> extra::Geometry {
+        extra::Geometry {
+            prg_8k: (self.prg_rom.len() / 0x2000).max(1),
+            chr_1k: (self.chr_memory.len() / 0x400).max(1),
+            chr_ram: self.chr_is_ram,
         }
     }
 
@@ -493,32 +513,26 @@ impl Cartridge {
                 };
                 bank % banks * 0x2000 + usize::from(addr & 0x1FFF)
             }
-            Mapper::Mmc3(state) => {
-                let banks = prg_len / 0x2000;
-                let last = banks.saturating_sub(1);
-                let second_last = banks.saturating_sub(2);
-                let fixed_second = !state.prg_mode;
+            Mapper::Extra(state) => {
+                let banks = (prg_len / 0x2000).max(1);
                 let slot = usize::from((addr - 0x8000) / 0x2000);
-                let bank = match (slot, fixed_second) {
-                    (0, true) => usize::from(state.banks[6] & 0x3E) % banks,
-                    (0, false) => second_last,
-                    (1, _) => {
-                        let base = if fixed_second {
-                            usize::from(state.banks[6] & 0x3E) + 1
-                        } else {
-                            usize::from(state.banks[7])
-                        };
-                        base % banks
-                    }
-                    (2, true) => usize::from(state.banks[7]) % banks,
-                    (2, false) => usize::from(state.banks[6] & 0x3E) % banks,
-                    (3, _) => {
-                        if fixed_second {
-                            last
-                        } else {
-                            (usize::from(state.banks[6] & 0x3E) + 1) % banks
-                        }
-                    }
+                state.prg_bank(slot, banks) * 0x2000 + usize::from(addr & 0x1FFF)
+            }
+            Mapper::Mmc3(state) => {
+                let banks = (prg_len / 0x2000).max(1);
+                let last = banks - 1;
+                let second_last = banks.saturating_sub(2);
+                let r6 = usize::from(state.banks[6] & 0x3F) % banks;
+                let r7 = usize::from(state.banks[7] & 0x3F) % banks;
+                let slot = usize::from((addr - 0x8000) / 0x2000);
+                // R6 is at $8000 and R7 at $A000 normally; with PRG mode 1 R6
+                // moves to $C000 and the second-last bank to $8000.
+                let bank = match (slot, state.prg_mode) {
+                    (0, false) => r6,
+                    (0, true) => second_last,
+                    (1, _) => r7,
+                    (2, false) => second_last,
+                    (2, true) => r6,
                     _ => last,
                 };
                 bank * 0x2000 + usize::from(addr & 0x1FFF)
@@ -539,6 +553,10 @@ impl Cartridge {
                 (usize::from(state.chr_banks[register]) % banks_1k) * 0x400 + (addr & 0x3FF)
             }
             Mapper::Quattro { .. } => addr % len,
+            Mapper::Extra(state) => {
+                let banks_1k = (len / 0x400).max(1);
+                state.chr_bank(addr / 0x400, banks_1k) * 0x400 + (addr & 0x3FF)
+            }
             Mapper::Vrc6(state) => {
                 let banks_1k = (len / 0x400).max(1);
                 let slot = addr / 0x400;
@@ -593,15 +611,14 @@ impl Cartridge {
             Mapper::Mmc3(state) => {
                 let banks_1k = (len / 0x400).max(1);
                 let slot = addr / 0x400;
-                let bank = match (state.chr_mode, slot) {
-                    (false, 0) | (false, 1) => usize::from(state.banks[0] & 0xFE) + slot,
-                    (false, 2) | (false, 3) | (false, 4) | (false, 5) => {
-                        usize::from(state.banks[slot])
-                    }
-                    (false, _) => usize::from(state.banks[1] & 0xFE) + slot - 6,
-                    (true, 0..=3) => usize::from(state.banks[2 + slot]),
-                    (true, 4) | (true, 5) => usize::from(state.banks[0] & 0xFE) + slot - 4,
-                    _ => usize::from(state.banks[1] & 0xFE) + slot - 6,
+                let reg = |i: usize| usize::from(state.banks[i]);
+                // CHR mode 0: R0/R1 are 2 KB banks at $0000/$0800 and R2-R5 are
+                // 1 KB banks at $1000-$1FFF. Mode 1 swaps the two halves.
+                let slot = if state.chr_mode { slot ^ 4 } else { slot };
+                let bank = match slot {
+                    0 | 1 => (reg(0) & 0xFE) + slot,
+                    2 | 3 => (reg(1) & 0xFE) + slot - 2,
+                    _ => reg(slot - 2),
                 };
                 (bank % banks_1k) * 0x400 + (addr & 0x3FF)
             }

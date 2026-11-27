@@ -61,17 +61,47 @@ pub struct Settings {
     pub last_rom: Option<PathBuf>,
 }
 
+/// Default bindings: WASD for the D-pad, K/J for A/B, Enter for Start and
+/// Backspace for Select.
+pub fn default_keymap() -> BTreeMap<String, String> {
+    let mut keymap = BTreeMap::new();
+    for (button, key) in [
+        ("Up", "W"),
+        ("Down", "S"),
+        ("Left", "A"),
+        ("Right", "D"),
+        ("A", "K"),
+        ("B", "J"),
+        ("Start", "Enter"),
+        ("Select", "Backspace"),
+    ] {
+        keymap.insert(button.to_string(), key.to_string());
+    }
+    keymap
+}
+
+/// The bindings older versions shipped with. A saved keymap that still equals
+/// this was never customised, so it is upgraded to the WASD defaults.
+fn legacy_keymap() -> BTreeMap<String, String> {
+    let mut keymap = BTreeMap::new();
+    for (button, key) in [
+        ("A", "X"),
+        ("B", "Z"),
+        ("Select", "A"),
+        ("Start", "S"),
+        ("Up", "ArrowUp"),
+        ("Down", "ArrowDown"),
+        ("Left", "ArrowLeft"),
+        ("Right", "ArrowRight"),
+    ] {
+        keymap.insert(button.to_string(), key.to_string());
+    }
+    keymap
+}
+
 impl Default for Settings {
     fn default() -> Self {
-        let mut keymap = BTreeMap::new();
-        keymap.insert("A".into(), "X".into());
-        keymap.insert("B".into(), "Z".into());
-        keymap.insert("Select".into(), "A".into());
-        keymap.insert("Start".into(), "S".into());
-        keymap.insert("Up".into(), "ArrowUp".into());
-        keymap.insert("Down".into(), "ArrowDown".into());
-        keymap.insert("Left".into(), "ArrowLeft".into());
-        keymap.insert("Right".into(), "ArrowRight".into());
+        let keymap = default_keymap();
         Self {
             volume: 0.7,
             muted: false,
@@ -109,7 +139,11 @@ impl Settings {
         let Ok(text) = fs::read_to_string(path) else {
             return Self::default();
         };
-        serde_json::from_str(&text).unwrap_or_default()
+        let mut settings: Self = serde_json::from_str(&text).unwrap_or_default();
+        if settings.keymap == legacy_keymap() {
+            settings.keymap = default_keymap();
+        }
+        settings
     }
 
     pub fn save(&self) -> Result<(), String> {
