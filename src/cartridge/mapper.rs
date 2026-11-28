@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::audio::{Mmc5Audio, Vrc6Audio};
-use super::extra::{ExtraState, Geometry, EXTRA_MAPPERS};
+use super::extra::{handles, ExtraState, Geometry};
 use super::Mirroring;
 
 /// Mappers implemented by NES Core. Support is listed in the README and is only
@@ -12,7 +12,7 @@ pub const CORE_MAPPERS: [u16; 15] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 24, 26, 66,
 
 /// True when NES Core has an implementation for iNES mapper `number`.
 pub fn is_supported(number: u16) -> bool {
-    CORE_MAPPERS.contains(&number) || EXTRA_MAPPERS.contains(&number)
+    CORE_MAPPERS.contains(&number) || handles(number) || number == 118
 }
 
 /// MMC5 keeps 1 KB of internal extended RAM mirrored at `$5C00-$5FFF`.
@@ -83,6 +83,9 @@ pub struct Mmc3State {
     pub irq_pending: bool,
     pub prg_mode: bool,
     pub chr_mode: bool,
+    /// Mapper 118 (TxSROM): CHR bank bit 7 selects the nametable page.
+    #[serde(default)]
+    pub txsrom: bool,
 }
 
 impl Default for Mmc3State {
@@ -98,6 +101,7 @@ impl Default for Mmc3State {
             irq_pending: false,
             prg_mode: false,
             chr_mode: false,
+            txsrom: false,
         }
     }
 }
@@ -436,7 +440,11 @@ impl Mapper {
                 single_screen: None,
             },
             232 => Mapper::Quattro { outer: 0, inner: 0 },
-            n if EXTRA_MAPPERS.contains(&n) => Mapper::Extra(ExtraState::new(n)),
+            118 => Mapper::Mmc3(Mmc3State {
+                txsrom: true,
+                ..Mmc3State::default()
+            }),
+            n if handles(n) => Mapper::Extra(ExtraState::new(n)),
             _ => Mapper::Nrom,
         }
     }
@@ -447,6 +455,7 @@ impl Mapper {
             Mapper::Mmc1(_) => 1,
             Mapper::Uxrom { .. } => 2,
             Mapper::Cnrom { .. } => 3,
+            Mapper::Mmc3(state) if state.txsrom => 118,
             Mapper::Mmc3(_) => 4,
             Mapper::Mmc2(state) => {
                 if state.variant_4 {
@@ -478,6 +487,7 @@ impl Mapper {
             Mapper::Mmc1(_) => "MMC1 (1)",
             Mapper::Uxrom { .. } => "UxROM (2)",
             Mapper::Cnrom { .. } => "CNROM (3)",
+            Mapper::Mmc3(state) if state.txsrom => "TxSROM (118)",
             Mapper::Mmc3(_) => "MMC3 (4)",
             Mapper::Mmc2(state) => {
                 if state.variant_4 {
@@ -749,6 +759,7 @@ impl Mapper {
             } else {
                 Mirroring::OneScreenLower
             }),
+            Mapper::Mmc3(state) if state.txsrom => None,
             Mapper::Mmc3(state) => Some(state.mirroring),
             Mapper::Mmc1(state) => Some(match state.control & 0x03 {
                 0 => Mirroring::OneScreenLower,

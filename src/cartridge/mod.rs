@@ -187,7 +187,15 @@ impl Cartridge {
 
         let chr_is_ram = chr_banks == 0;
         let chr_memory = if chr_is_ram {
-            vec![0; CHR_RAM_SIZE]
+            // CPROM (13) switches between four 4 KB pages of CHR RAM.
+            vec![
+                0;
+                if mapper == 13 {
+                    2 * CHR_RAM_SIZE
+                } else {
+                    CHR_RAM_SIZE
+                }
+            ]
         } else {
             if data.len() < offset + chr_len {
                 return Err(RomError::TruncatedChr {
@@ -611,7 +619,8 @@ impl Cartridge {
             Mapper::Mmc3(state) => {
                 let banks_1k = (len / 0x400).max(1);
                 let slot = addr / 0x400;
-                let reg = |i: usize| usize::from(state.banks[i]);
+                let mask = if state.txsrom { 0x7F } else { 0xFF };
+                let reg = |i: usize| usize::from(state.banks[i] & mask);
                 // CHR mode 0: R0/R1 are 2 KB banks at $0000/$0800 and R2-R5 are
                 // 1 KB banks at $1000-$1FFF. Mode 1 swaps the two halves.
                 let slot = if state.chr_mode { slot ^ 4 } else { slot };
@@ -683,6 +692,24 @@ impl Cartridge {
             // with page 0 because NES Core does not render ExRAM nametables.
             let page = (state.nametable_map >> (table * 2)) & 0x03;
             return usize::from(page == 1) * 0x400 + offset;
+        }
+        if let Mapper::Extra(state) = &self.mapper {
+            if let Some(pages) = state.nt {
+                return usize::from(pages[table] & 1) * 0x400 + offset;
+            }
+        }
+        if let Mapper::Mmc3(state) = &self.mapper {
+            if state.txsrom {
+                // Each nametable takes its CIRAM page from bit 7 of the CHR
+                // bank that covers the same address.
+                let slot = if state.chr_mode { table ^ 4 } else { table };
+                let reg = match slot {
+                    0 | 1 => 0,
+                    2 | 3 => 1,
+                    n => n - 2,
+                };
+                return usize::from(state.banks[reg] >> 7) * 0x400 + offset;
+            }
         }
         let physical = match self.mirroring {
             Mirroring::Horizontal => [0, 0, 1, 1][table],

@@ -42,8 +42,8 @@ keyboard input and produces audio.
 | Language | Rust 2021, minimum 1.80 |
 | Interface | egui desktop app with a wgpu-backed renderer |
 | Version | `0.5.0` in `Cargo.toml` (source on `main`, not yet tagged) |
-| Tests | 70 passing: 33 cartridge, 16 mapper, 12 CPU, 5 emulator, 3 PPU, 1 controls |
-| Mappers | 42 iNES mapper ids: 15 hand-written boards plus 27 through a shared extra-board engine |
+| Tests | 90 passing: 33 cartridge, 33 mapper, 12 CPU, 5 emulator, 3 PPU, 3 audio, 1 controls |
+| Mappers | 73 iNES mapper ids: 16 hand-written boards plus 57 through a shared extra-board engine |
 | Timing | NTSC and PAL, header detected |
 | Audio | 44.1 kHz non-linear mixer, plus MMC5 and VRC6 expansion audio |
 | License | MIT |
@@ -63,7 +63,7 @@ steps are closed, step seven is open, which puts the project at roughly **6.5 of
 | 3 | Rendering: background, sprites, scrolling, palettes, vblank NMI | Closed |
 | 4 | Sound: APU channels, frame sequencer, mixer, audio output | Closed |
 | 5 | Desktop app: library, game view, settings, save states | Closed |
-| 6 | Mapper breadth: 42 ids covering the common and the awkward boards | Closed |
+| 6 | Mapper breadth: 73 ids covering the common and the awkward boards | Closed |
 | 7 | Timing accuracy: per-dot PPU output, exact MMC3 A12 IRQ | In progress |
 | 8 | Input and packaging: gamepad, per-platform builds, a tagged release | Not started |
 | 9 | Compatibility: a broad, legally redistributable test library | Not started |
@@ -86,7 +86,7 @@ covered by the tests in `tests/`; it does not mean every commercial game works.
 | PPU | Implemented | Background, sprites (8x8 and 8x16), scrolling, nametables, attributes, palettes, sprite 0 hit, vblank/NMI, emphasis |
 | APU | Implemented | Two pulses, triangle, noise, DMC sample playback, frame sequencer and frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio |
 | Controllers | Implemented | Two standard controllers with correct strobe/shift behavior |
-| Mappers | Partial | 42 ids. Hand-written: 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3, 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6, 66 GxROM, 71 Camerica, 232 Quattro. Shared extra-board engine: 16/159 Bandai FCG, 21/22/23/25 VRC2/VRC4, 33 Taito TC0190, 34 BNROM/NINA-001, 69 FME-7, 70/152 Bandai, 75 VRC1, 78 Irem, 79/113/146 NINA-03/06, 85 VRC7, 87/140 Jaleco, 88/154/206 Namco 118, 89/93 Sunsoft-2, 94 UN1ROM, 180 UNROM, 184 Sunsoft-1 |
+| Mappers | Partial | 73 ids. Hand-written: 0 NROM, 1 MMC1, 2 UxROM, 3 CNROM, 4 MMC3, 5 MMC5, 7 AxROM, 9 MMC2, 10 MMC4, 11 Color Dreams, 24/26 VRC6, 66 GxROM, 71 Camerica, 118 TxSROM, 232 Quattro. Shared extra-board engine: 13 CPROM, 16/159 Bandai FCG, 18 Jaleco SS88006, 21/22/23/25 VRC2/VRC4, 32 Irem G-101, 33/48 Taito TC0190, 34 BNROM/NINA-001, 38, 65 Irem H3001, 67 Sunsoft-3, 69 FME-7, 70/152 Bandai, 72/92 Jaleco, 73 VRC3, 75/151 VRC1, 76/88/95/154/206 Namco 108 family, 78 Irem, 79/113/146 NINA-03/06, 85 VRC7, 86, 87/140 Jaleco, 89/93 Sunsoft-2, 94 UN1ROM, 107, 112 Asder, 133/148/149 Sachen, 180 UNROM, 184 Sunsoft-1, 200/201/202/203/225/229/240/241/242 multicarts, 210 Namco 175/340, 246 |
 | Audio output | Implemented | cpal on Windows/macOS; runtime-loaded ALSA on Linux (no dev headers required) |
 | Save states | Implemented | Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes |
 | Settings and library | Implemented | Persisted in the per-user configuration directory |
@@ -236,6 +236,8 @@ The suite is 70 tests in six integration files:
 | `tests/mappers.rs` | 16 | Banking, IRQs and latching for the hand-written boards and the extra-board engine |
 | `tests/cpu.rs` | 12 | Instruction results, cycles, flags, page-cross and branch penalties, interrupts |
 | `tests/emulator.rs` | 5 | Whole-machine frames, NMI timing, DMA stalls, PPU output, save states |
+| `tests/mappers2.rs` | 17 | Second batch of boards: Jaleco, Irem, Sunsoft-3, VRC3, TxSROM, Namco 3425/175/340, Sachen, multicarts, plus a supported-mapper-count guard |
+| `tests/audio.rs` | 3 | Triangle pitch, noise rate, no DC offset and sample range |
 | `tests/ppu.rs` | 3 | Background output, scroll register behaviour, sprite handling |
 | `tests/controls.rs` | 1 | Controller strobe and shift order |
 
@@ -258,7 +260,7 @@ DMA stalls, cartridge mapping, PPU background output, NMI handling, the
 controller shift register and save states.
 
 It has **not** been validated against a broad library of commercial games, and
-no game-specific compatibility claims are made. Mapper coverage (42 mapper ids,
+no game-specific compatibility claims are made. Mapper coverage (73 mapper ids,
 see the table above) and the PPU's scanline-granular rendering are the main
 practical limits. Both NTSC and PAL timing are supported. Bug reports that
 include a legally redistributable test ROM are the most useful kind.
@@ -271,7 +273,7 @@ Planned work, in no strict order:
 - Gamepad support (SDL or `gilrs`) and configurable controller ports
 - A tagged release with Windows, macOS and Linux binaries, so the newest download
   is not the v0.3.0 zip
-- More mappers: 18, 19, 64, 65, 67, 68, 118, 119, 210 and multicarts, plus VRC7
+- More mappers: 19 Namco 163, 64 RAMBO-1, 68 Sunsoft-4, 119 TQROM and most multicarts, plus VRC7
   and FME-7 expansion audio
 - Finer MMC5 split-screen timing (CL-board fine scroll) and enforced PRG RAM
   write protection

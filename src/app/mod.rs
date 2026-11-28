@@ -825,7 +825,7 @@ impl NesApp {
                     );
                     ui.label(
                         RichText::new(
-                            "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 16/159 Bandai FCG · 21/22/23/25 VRC2/VRC4 · 24/26 VRC6 · 33 Taito TC0190 · 34 BNROM/NINA-001 · 66 GxROM · 69 FME-7 · 70/152 Bandai · 71 Camerica · 75 VRC1 · 78 Irem · 79/113/146 NINA-03/06 · 85 VRC7 · 87 Jaleco · 88/154/206 Namco 118 · 89/93 Sunsoft-2 · 94 UN1ROM · 140 Jaleco · 180 UNROM · 184 Sunsoft-1 · 232 Quattro",
+                            "0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 13 CPROM · 16/159 Bandai FCG · 18 Jaleco · 21/22/23/25 VRC2/VRC4 · 24/26 VRC6 · 32 Irem G-101 · 33/48 Taito · 34 BNROM/NINA-001 · 38 · 65 Irem H3001 · 66 GxROM · 67 Sunsoft-3 · 69 FME-7 · 70/152 Bandai · 71 Camerica · 72/92 Jaleco · 73 VRC3 · 75/151 VRC1 · 76/88/95/154/206 Namco 108 family · 78 Irem · 79/113/146 NINA-03/06 · 85 VRC7 · 86 · 87 · 89/93 Sunsoft-2 · 94 UN1ROM · 107 · 112 Asder · 118 TxSROM · 133/148/149 Sachen · 140 · 180 UNROM · 184 Sunsoft-1 · 200/201/202/203/225/229/232/240/241/242 multicarts · 210 Namco 175/340 · 246",
                         )
                         .size(12.0)
                         .color(MUTED),
@@ -1490,7 +1490,7 @@ impl NesApp {
                 (
                     "Cartridges",
                     "iNES and NES 2.0 headers, PRG/CHR mapping, PRG RAM and battery-backed \
-                     RAM in memory, and 42 mappers (see the Import page for the list).",
+                     RAM in memory, and 73 mappers (see the Import page for the list).",
                 ),
                 (
                     "Desktop features",
