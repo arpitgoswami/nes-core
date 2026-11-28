@@ -236,7 +236,13 @@ footer li a:hover{color:var(--fg)}
 .prog-copy p+p{margin-top:10px}
 .seg{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;margin:26px 0 14px}
 .seg i{display:block;height:10px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)}
-.seg i.done{background:var(--grad);border-color:transparent}
+.seg i.done{background:linear-gradient(90deg,var(--red),var(--vio),var(--cyan),var(--red));background-size:300% 100%;border-color:transparent;animation:segflow 6s linear infinite}
+.seg i.done:nth-child(2){animation-delay:-.5s}
+.seg i.done:nth-child(3){animation-delay:-1s}
+.seg i.done:nth-child(4){animation-delay:-1.5s}
+.seg i.done:nth-child(5){animation-delay:-2s}
+.seg i.done:nth-child(6){animation-delay:-2.5s}
+@keyframes segflow{from{background-position:0% 50%}to{background-position:300% 50%}}
 .seg i.doing{background:linear-gradient(90deg,var(--gold),rgba(255,200,87,.3));border-color:rgba(255,200,87,.55)}
 .seg-legend{display:flex;flex-wrap:wrap;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
 .seg-legend>span{display:inline-flex;align-items:center;gap:8px}
@@ -264,33 +270,10 @@ footer li a:hover{color:var(--fg)}
   .seg i{height:8px}
   .lvl{padding:18px;grid-template-columns:26px 1fr;gap:10px}
 }
-/* completion */
-.complete{background:var(--bg2);border:1px solid var(--line);border-radius:24px;padding:40px}
-.complete-top{display:flex;align-items:baseline;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:22px}
-.complete-pct{font-family:'Space Grotesk',sans-serif;font-size:clamp(44px,6vw,68px);font-weight:700;letter-spacing:-.045em;line-height:1;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.complete-meta{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
-.scale{position:relative;height:16px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)}
-.scale-fill{position:absolute;top:0;left:0;bottom:0;width:var(--p,0%);background:var(--grad);border-radius:999px}
-.scale-mark{position:absolute;top:-4px;bottom:-4px;left:var(--p,0%);width:2px;margin-left:-1px;background:var(--fg);border-radius:2px}
-.scale-ticks{display:flex;justify-content:space-between;gap:0;margin-top:9px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:.5px}
-.bands{list-style:none;margin-top:30px}
-.bands .lvl{grid-template-columns:84px 1fr}
-.bands .lvl .n{font-size:11px;letter-spacing:0;white-space:nowrap}
-@media(max-width:900px){
-  .complete{padding:28px}
-  .bands{grid-template-columns:1fr}
-  .bands .lvl{grid-template-columns:80px 1fr}
-}
-@media(max-width:600px){
-  .complete{padding:22px;border-radius:20px}
-  .scale{height:12px}
-  .bands .lvl{grid-template-columns:68px 1fr}
-  .scale-ticks{font-size:9px}
-}
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
-  .marquee-track,.eyebrow .pulse,.hero-scroll .line{animation:none!important}
+  .marquee-track,.eyebrow .pulse,.hero-scroll .line,.seg i.done{animation:none!important}
   .marquee-track{transform:none}
   .hero-scroll .line{transform:scaleY(1);opacity:.55}
   .reveal,.js .reveal,.js .reveal.in{opacity:1;transform:none}
@@ -304,7 +287,6 @@ footer li a:hover{color:var(--fg)}
   <div class="logo"><span class="dot"></span>NES CORE</div>
   <div class="nav-links">
     <a href="#progress" class="hover">Progress</a>
-    <a href="#completion" class="hover">Completion</a>
     <a href="#milestones" class="hover">Milestones</a>
     <a href="#features" class="hover">Features</a>
     <a href="#mappers" class="hover">Mappers</a>
@@ -378,42 +360,10 @@ footer li a:hover{color:var(--fg)}
     <div class="lvl" aria-hidden="true"></div>
   </div>
 </section>
-<section id="completion">
-  <div class="sec-head">
-    <div>
-      <div class="sec-num">02 / COMPLETION</div>
-      <h2 class="sec-title reveal">65 percent done.</h2>
-    </div>
-    <p class="sec-desc reveal">The same score as one bar: zero to one hundred, cut into ten bands. Each band names the work it covers, so you can see what is finished, which step is open and what is still ahead.</p>
-  </div>
-  <div class="complete reveal">
-    <div class="complete-top">
-      <div class="complete-pct">65%</div>
-      <div class="complete-meta">6 levels closed / 1 open / 3 to go</div>
-    </div>
-    <div class="scale" role="img" aria-label="Overall completion: 65 percent">
-      <span class="scale-fill" style="--p:65%"></span>
-      <span class="scale-mark" style="--p:65%"></span>
-    </div>
-    <div class="scale-ticks" aria-hidden="true"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>100</span></div>
-    <ol class="levels bands">
-      <li class="lvl reveal"><div class="n done">0-10%</div><div><h4>Baseline and cartridge loading <span class="tag done">Done</span></h4><p>An empty repository becomes a program that opens a ROM: iNES and NES 2.0 headers parsed and validated, trainers skipped, mapper id resolved, unlisted ids rejected with a clear error.</p></div></li>
-      <li class="lvl reveal"><div class="n done">10-20%</div><div><h4>CPU <span class="tag done">Done</span></h4><p>The 6502 runs every official opcode plus the common unofficial ones, with page-cross and branch penalties, NMI, IRQ, reset and OAM and DMC DMA stalls.</p></div></li>
-      <li class="lvl reveal"><div class="n done">20-30%</div><div><h4>Rendering <span class="tag done">Done</span></h4><p>Background and sprites in 8x8 and 8x16, scrolling, nametables, attributes, palettes, sprite 0 hit and vblank NMI. Composed one scanline at a time, not per dot.</p></div></li>
-      <li class="lvl reveal"><div class="n done">30-40%</div><div><h4>Sound <span class="tag done">Done</span></h4><p>Two pulses, triangle, noise and DMC through a non-linear mixer at 44.1 kHz, wired to cpal. Covered by tests; the audio itself has not been heard on the headless build machine.</p></div></li>
-      <li class="lvl reveal"><div class="n done">40-50%</div><div><h4>Desktop app <span class="tag done">Done</span></h4><p>Library, game view, settings, rebindable keys, achievements and 10 save-state slots per ROM in a versioned JSON format with a fingerprint check.</p></div></li>
-      <li class="lvl reveal"><div class="n done">50-60%</div><div><h4>Mapper breadth <span class="tag done">Done</span></h4><p>42 mapper ids: 15 hand-written boards including MMC3, MMC5 and VRC6, plus 27 more through a shared extra-board engine. Unlisted ids fail loudly instead of guessing.</p></div></li>
-      <li class="lvl reveal"><div class="n doing">60-70%</div><div><h4>Timing accuracy <span class="tag doing">In progress</span></h4><p>NTSC and PAL frame timing and the scroll pipeline are correct. Still open: per-dot PPU output and an exact MMC3 A12 IRQ filter. This is the band the project is inside now, at 65 percent.</p></div></li>
-      <li class="lvl reveal"><div class="n">70-80%</div><div><h4>Input and packaging <span class="tag">Not started</span></h4><p>Gamepad support, macOS and Linux builds, and a published v0.5.0 tag with a binary behind it. The newest packaged build is still the v0.3.0 Windows zip.</p></div></li>
-      <li class="lvl reveal"><div class="n">80-90%</div><div><h4>Compatibility <span class="tag">Not started</span></h4><p>Run a broad, legally redistributable ROM library and fix what breaks, then publish the results. No commercial game has been validated yet.</p></div></li>
-      <li class="lvl reveal"><div class="n">90-100%</div><div><h4>v1.0 <span class="tag">Not started</span></h4><p>Per-dot PPU rendering, rewind, netplay, NSF playback, builds for every platform, and a compatibility table behind the claim.</p></div></li>
-    </ol>
-  </div>
-</section>
 <section id="stats">
   <div class="sec-head">
     <div>
-      <div class="sec-num">03 / METRICS</div>
+      <div class="sec-num">02 / METRICS</div>
       <h2 class="sec-title reveal">By the numbers.</h2>
     </div>
     <p class="sec-desc reveal">Conservative counts. "Implemented" means the code exists and is covered by the tests in tests/.</p>
@@ -428,7 +378,7 @@ footer li a:hover{color:var(--fg)}
 <section id="milestones">
   <div class="sec-head">
     <div>
-      <div class="sec-num">04 / MILESTONES</div>
+      <div class="sec-num">03 / MILESTONES</div>
       <h2 class="sec-title reveal">Version history.</h2>
     </div>
     <p class="sec-desc reveal">Each milestone was pushed to main with README and CHANGELOG updates and verified green in CI.</p>
@@ -521,7 +471,7 @@ footer li a:hover{color:var(--fg)}
 <section id="features">
   <div class="sec-head">
     <div>
-      <div class="sec-num">05 / FEATURES</div>
+      <div class="sec-num">04 / FEATURES</div>
       <h2 class="sec-title reveal">What works.</h2>
     </div>
     <p class="sec-desc reveal">Status is deliberately conservative. Implemented means the code exists and is covered by tests.</p>
@@ -546,7 +496,7 @@ footer li a:hover{color:var(--fg)}
 <section id="mappers">
   <div class="sec-head">
     <div>
-      <div class="sec-num">06 / MAPPERS</div>
+      <div class="sec-num">05 / MAPPERS</div>
       <h2 class="sec-title reveal">Cartridge coverage.</h2>
     </div>
     <p class="sec-desc reveal">42 mapper ids, each with versioned save-state support. Bold ids are hand-written boards; the rest share one extra-board engine.</p>
@@ -599,7 +549,7 @@ footer li a:hover{color:var(--fg)}
 <section id="accuracy">
   <div class="sec-head">
     <div>
-      <div class="sec-num">07 / ACCURACY</div>
+      <div class="sec-num">06 / ACCURACY</div>
       <h2 class="sec-title reveal">Honest boundaries.</h2>
     </div>
     <p class="sec-desc reveal">What is exact and what is approximated, stated plainly.</p>
@@ -638,7 +588,7 @@ footer li a:hover{color:var(--fg)}
 <section id="tests">
   <div class="sec-head">
     <div>
-      <div class="sec-num">08 / TESTS AND CI</div>
+      <div class="sec-num">07 / TESTS AND CI</div>
       <h2 class="sec-title reveal">Verified green.</h2>
     </div>
     <p class="sec-desc reveal">cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test --all-targets.</p>
@@ -684,7 +634,7 @@ footer li a:hover{color:var(--fg)}
 <section id="release">
   <div class="sec-head">
     <div>
-      <div class="sec-num">09 / CURRENT RELEASE</div>
+      <div class="sec-num">08 / CURRENT RELEASE</div>
       <h2 class="sec-title reveal">v0.5.0 is current.</h2>
     </div>
     <p class="sec-desc reveal">The version on main right now. Source only: no v0.5.0 tag or binary has been published yet, so the newest packaged build is still the v0.3.0 Windows zip.</p>
@@ -715,7 +665,7 @@ footer li a:hover{color:var(--fg)}
 <section id="roadmap">
   <div class="sec-head">
     <div>
-      <div class="sec-num">10 / ROADMAP</div>
+      <div class="sec-num">09 / ROADMAP</div>
       <h2 class="sec-title reveal">What is next.</h2>
     </div>
     <p class="sec-desc reveal">Planned work, in no strict order.</p>
@@ -737,7 +687,7 @@ footer li a:hover{color:var(--fg)}
 <section id="notimplemented">
   <div class="sec-head">
     <div>
-      <div class="sec-num">11 / STATUS TABLE</div>
+      <div class="sec-num">10 / STATUS TABLE</div>
       <h2 class="sec-title reveal">What is left.</h2>
     </div>
     <p class="sec-desc reveal">Working or not, stated plainly.</p>
