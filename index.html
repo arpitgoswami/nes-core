@@ -304,9 +304,9 @@ footer li a:hover{color:var(--fg)}
     <p class="hero-sub reveal delay2">An independent, open-source NES and Famicom emulator written in Rust. CPU, PPU, APU, memory bus, controllers, cartridge parsing and mappers - all implemented in this repository. No mocks, no wrappers around another emulator.</p>
     <div class="hero-meta reveal delay3">
       <span class="chip ok"><span class="b"></span>v0.5.0 on main</span>
-      <span class="chip ok"><span class="b"></span>70 tests passing</span>
+      <span class="chip ok"><span class="b"></span>90 tests passing</span>
       <span class="chip ok"><span class="b"></span>CI green</span>
-      <span class="chip ok"><span class="b"></span>42 mappers</span>
+      <span class="chip ok"><span class="b"></span>73 mappers</span>
       <span class="chip no"><span class="b"></span>Gamepad pending</span>
     </div>
     <div class="hero-actions reveal delay3">
@@ -337,7 +337,7 @@ footer li a:hover{color:var(--fg)}
     </div>
     <div class="prog-copy">
       <h3>Emulation works end to end. Accuracy is the open work.</h3>
-      <p>Levels 1 to 6 are closed: a ROM parses, the 6502 executes, the PPU draws, the APU mixes, the desktop app runs, and 42 mapper ids switch banks. 70 tests cover that surface and CI is green on them.</p>
+      <p>Levels 1 to 6 are closed: a ROM parses, the 6502 executes, the PPU draws, the APU mixes, the desktop app runs, and 73 mapper ids switch banks. 90 tests cover that surface and CI is green on them.</p>
       <p>Level 7 is timing accuracy. NTSC and PAL frame timing and the scroll pipeline are correct, but the PPU still composes a scanline in one step and MMC3 clocks its IRQ per rendered line instead of from an A12 watch. Levels 8 to 10 are input, compatibility testing and a real release.</p>
       <div class="seg" aria-hidden="true">
         <i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="doing"></i><i></i><i></i><i></i>
@@ -352,7 +352,7 @@ footer li a:hover{color:var(--fg)}
     <div class="lvl reveal"><div class="n done">03</div><div><h4>Rendering <span class="tag done">Closed</span></h4><p>Background, sprites in 8x8 and 8x16, scrolling, nametables, attributes, palettes, sprite 0 hit and vblank NMI.</p></div></div>
     <div class="lvl reveal"><div class="n done">04</div><div><h4>Sound <span class="tag done">Closed</span></h4><p>Two pulses, triangle, noise and DMC through a non-linear mixer at 44.1 kHz, wired to cpal. Compiled, not heard on this headless machine.</p></div></div>
     <div class="lvl reveal"><div class="n done">05</div><div><h4>Desktop app <span class="tag done">Closed</span></h4><p>Library, game view, settings, rebindable keys, achievements and 10 save-state slots per ROM in a versioned JSON format.</p></div></div>
-    <div class="lvl reveal"><div class="n done">06</div><div><h4>Mapper breadth <span class="tag done">Closed</span></h4><p>42 mapper ids: 15 hand-written boards including MMC3, MMC5 and VRC6, plus 27 more through a shared extra-board engine.</p></div></div>
+    <div class="lvl reveal"><div class="n done">06</div><div><h4>Mapper breadth <span class="tag done">Closed</span></h4><p>73 mapper ids: 16 hand-written boards including MMC3, MMC5, VRC6 and TxSROM, plus 57 more through a shared extra-board engine, multicarts included.</p></div></div>
     <div class="lvl reveal"><div class="n doing">07</div><div><h4>Timing accuracy <span class="tag doing">In progress</span></h4><p>NTSC and PAL frame timing are right and the scroll pipeline was fixed after 0.5.0. Missing: per-dot PPU output and an exact MMC3 A12 IRQ filter.</p></div></div>
     <div class="lvl reveal"><div class="n">08</div><div><h4>Input and packaging <span class="tag">Not started</span></h4><p>Gamepad support, macOS and Linux builds, and a published v0.5.0 tag. The newest packaged binary is still the v0.3.0 Windows zip.</p></div></div>
     <div class="lvl reveal"><div class="n">09</div><div><h4>Compatibility <span class="tag">Not started</span></h4><p>Run a broad, legally redistributable ROM library and fix what breaks. No commercial game has been validated yet.</p></div></div>
@@ -369,8 +369,8 @@ footer li a:hover{color:var(--fg)}
     <p class="sec-desc reveal">Conservative counts. "Implemented" means the code exists and is covered by the tests in tests/.</p>
   </div>
   <div class="stats">
-    <div class="stat"><div class="num" data-target="70">70</div><div class="label">Tests passing</div><div class="note">33 cartridge, 16 mapper, 12 CPU, 5 emulator, 3 PPU, 1 controls</div></div>
-    <div class="stat"><div class="num" data-target="42">42</div><div class="label">Mappers supported</div><div class="note">15 core boards plus 27 extra boards</div></div>
+    <div class="stat"><div class="num" data-target="90">90</div><div class="label">Tests passing</div><div class="note">33 cartridge, 33 mapper, 12 CPU, 5 emulator, 3 PPU, 3 audio, 1 controls</div></div>
+    <div class="stat"><div class="num" data-target="73">73</div><div class="label">Mappers supported</div><div class="note">16 core boards plus 57 extra boards</div></div>
     <div class="stat"><div class="num" data-target="5">5</div><div class="label">Milestones shipped</div><div class="note">0.1.0 to 0.5.0</div></div>
     <div class="stat"><div class="num" data-target="44100">44,100</div><div class="label">Audio rate (Hz)</div><div class="note">Non-linear mixer at 44.1 kHz</div></div>
   </div>
@@ -457,13 +457,14 @@ footer li a:hover{color:var(--fg)}
     </div>
     <div class="tl-item v5 reveal">
       <div class="tl-ver">ON MAIN NOW</div>
-      <div class="tl-title">UI refresh and 27 more mappers</div>
+      <div class="tl-title">UI refresh and 73 mappers</div>
       <div class="tl-date">after 0.5.0</div>
       <ul class="tl-list">
         <li>Dark UI refresh with Inter, WASD default keys, clean fullscreen</li>
-        <li>27 more mapper ids behind a shared extra-board engine, 42 in total</li>
+        <li>57 more mapper ids behind a shared extra-board engine, 73 in total</li>
         <li>MMC1 and MMC3 banking fixes</li>
-        <li>70 tests passing, still no v0.5.0 tag or binary</li>
+        <li>TxSROM 118 and address-latch multicarts among the extra boards</li>
+        <li>90 tests passing, still no v0.5.0 tag or binary</li>
       </ul>
     </div>
   </div>
@@ -483,7 +484,7 @@ footer li a:hover{color:var(--fg)}
     <div class="feat reveal"><div class="row"><h3>PPU</h3><span class="badge ok">Implemented</span></div><p>Background, sprites 8x8 and 8x16, scrolling, nametables, attributes, palettes, sprite 0 hit, vblank, NMI, emphasis.</p></div>
     <div class="feat reveal"><div class="row"><h3>APU</h3><span class="badge ok">Implemented</span></div><p>Two pulses, triangle, noise, DMC playback, frame sequencer, frame IRQ, non-linear mixer at 44.1 kHz, plus MMC5 and VRC6 expansion audio.</p></div>
     <div class="feat reveal"><div class="row"><h3>Controllers</h3><span class="badge ok">Implemented</span></div><p>Two standard controllers with correct strobe and shift behavior.</p></div>
-    <div class="feat reveal"><div class="row"><h3>Mappers</h3><span class="badge partial">Partial</span></div><p>42 ids. 15 hand-written boards (NROM, MMC1, UxROM, CNROM, MMC3, MMC5, AxROM, MMC2/MMC4, Color Dreams, VRC6, GxROM, Camerica, Quattro) plus 27 more through a shared extra-board engine. Unlisted ids report a clear error instead of guessing.</p></div>
+    <div class="feat reveal"><div class="row"><h3>Mappers</h3><span class="badge partial">Partial</span></div><p>73 ids. 16 hand-written boards (NROM, MMC1, UxROM, CNROM, MMC3, MMC5, AxROM, MMC2/MMC4, Color Dreams, VRC6, GxROM, Camerica, TxSROM 118, Quattro) plus 57 more through a shared extra-board engine, from CPROM and the Jaleco, Namco, VRC2, VRC3, VRC4, Sunsoft and Irem boards to the address-latch multicarts. Unlisted ids report a clear error instead of guessing.</p></div>
     <div class="feat reveal"><div class="row"><h3>Audio output</h3><span class="badge ok">Implemented</span></div><p>cpal on Windows and macOS. Runtime-loaded ALSA on Linux with no dev headers required.</p></div>
     <div class="feat reveal"><div class="row"><h3>Save states</h3><span class="badge ok">Implemented</span></div><p>Versioned JSON format, ROM fingerprint check, 10 slots per ROM, atomic writes.</p></div>
     <div class="feat reveal"><div class="row"><h3>Settings and library</h3><span class="badge ok">Implemented</span></div><p>Persisted in the per-user configuration directory.</p></div>
@@ -499,9 +500,9 @@ footer li a:hover{color:var(--fg)}
       <div class="sec-num">05 / MAPPERS</div>
       <h2 class="sec-title reveal">Cartridge coverage.</h2>
     </div>
-    <p class="sec-desc reveal">42 mapper ids, each with versioned save-state support. Bold ids are hand-written boards; the rest share one extra-board engine.</p>
+    <p class="sec-desc reveal">73 mapper ids, each with versioned save-state support. Bold ids are hand-written boards; the rest share one extra-board engine.</p>
   </div>
-  <div class="mappers">
+    <div class="mappers">
     <div class="mapper core reveal"><span class="status"></span><span class="n">0</span><span class="name">NROM</span></div>
     <div class="mapper core reveal"><span class="status"></span><span class="n">1</span><span class="name">MMC1</span></div>
     <div class="mapper core reveal"><span class="status"></span><span class="n">2</span><span class="name">UxROM</span></div>
@@ -516,34 +517,65 @@ footer li a:hover{color:var(--fg)}
     <div class="mapper core reveal"><span class="status"></span><span class="n">26</span><span class="name">VRC6b</span></div>
     <div class="mapper core reveal"><span class="status"></span><span class="n">66</span><span class="name">GxROM</span></div>
     <div class="mapper core reveal"><span class="status"></span><span class="n">71</span><span class="name">Camerica</span></div>
+    <div class="mapper core reveal"><span class="status"></span><span class="n">118</span><span class="name">TxSROM</span></div>
     <div class="mapper core reveal"><span class="status"></span><span class="n">232</span><span class="name">Quattro</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">13</span><span class="name">CPROM</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">16</span><span class="name">Bandai FCG</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">159</span><span class="name">Bandai FCG</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">21</span><span class="name">VRC2/4</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">22</span><span class="name">VRC2/4</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">23</span><span class="name">VRC2/4</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">25</span><span class="name">VRC2/4</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">18</span><span class="name">Jaleco SS88006</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">21</span><span class="name">VRC4a/c</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">22</span><span class="name">VRC2a</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">23</span><span class="name">VRC2b/VRC4e</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">25</span><span class="name">VRC4b/d</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">32</span><span class="name">Irem G-101</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">33</span><span class="name">Taito TC0190</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">34</span><span class="name">BNROM/NINA-001</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">38</span><span class="name">Bit Corp.</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">48</span><span class="name">Taito TC0190+IRQ</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">65</span><span class="name">Irem H3001</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">67</span><span class="name">Sunsoft-3</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">69</span><span class="name">Sunsoft FME-7</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">70</span><span class="name">Bandai</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">152</span><span class="name">Bandai</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">70</span><span class="name">Bandai 74161</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">72</span><span class="name">Jaleco JF-17</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">73</span><span class="name">VRC3</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">75</span><span class="name">VRC1</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">78</span><span class="name">Irem</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">76</span><span class="name">Namco 109</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">78</span><span class="name">Irem 74161</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">79</span><span class="name">NINA-03/06</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">113</span><span class="name">NINA-03/06</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">146</span><span class="name">NINA-03/06</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">85</span><span class="name">VRC7</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">87</span><span class="name">Jaleco</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">86</span><span class="name">Jaleco JF-13</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">87</span><span class="name">Jaleco JF-05</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">88</span><span class="name">Namco 118</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">154</span><span class="name">Namco 118</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">206</span><span class="name">Namco 118</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">89</span><span class="name">Sunsoft-2</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">92</span><span class="name">Jaleco JF-19</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">93</span><span class="name">Sunsoft-2</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">94</span><span class="name">UN1ROM</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">140</span><span class="name">Jaleco</span></div>
-    <div class="mapper extra reveal"><span class="status"></span><span class="n">180</span><span class="name">UNROM</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">95</span><span class="name">Namco 3425</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">107</span><span class="name">Magic Dragon</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">112</span><span class="name">Asder</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">113</span><span class="name">NINA-03/06</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">133</span><span class="name">Sachen SA72008</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">140</span><span class="name">Jaleco JF-11</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">146</span><span class="name">Sachen</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">148</span><span class="name">Sachen SA-0037</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">149</span><span class="name">Sachen SA-0036</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">151</span><span class="name">VRC1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">152</span><span class="name">Bandai 74161</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">154</span><span class="name">Namco 118</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">159</span><span class="name">Bandai FCG</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">180</span><span class="name">UNROM reversed</span></div>
     <div class="mapper extra reveal"><span class="status"></span><span class="n">184</span><span class="name">Sunsoft-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">200</span><span class="name">1200-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">201</span><span class="name">21-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">202</span><span class="name">150-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">203</span><span class="name">35-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">206</span><span class="name">DxROM</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">210</span><span class="name">Namco 175/340</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">225</span><span class="name">64-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">229</span><span class="name">31-in-1</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">240</span><span class="name">Multicart</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">241</span><span class="name">BNROM-like</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">242</span><span class="name">Waixing</span></div>
+    <div class="mapper extra reveal"><span class="status"></span><span class="n">246</span><span class="name">Fong Shen Bang</span></div>
   </div>
 </section>
 <section id="accuracy">
@@ -565,6 +597,8 @@ footer li a:hover{color:var(--fg)}
         <li>VRC6 PRG, CHR, mirroring, scanline and cycle IRQ</li>
         <li>NTSC and PAL timing</li>
         <li>Expansion audio per CPU cycle</li>
+        <li>TxSROM 118 nametable selection from CHR bank bit 7</li>
+        <li>Multicart boards through address-latch banking</li>
       </ul>
     </div>
     <div class="acc reveal">
@@ -581,6 +615,7 @@ footer li a:hover{color:var(--fg)}
         <li>MMC2 and MMC4 sprite-side latches do not fire</li>
         <li>Quattro ignores Aladdin submapper swapped bits</li>
         <li>Extra boards are banking only, no VRC7 or FME-7 audio</li>
+        <li>Bus conflicts are not modelled on the extra-board engine</li>
       </ul>
     </div>
   </div>
@@ -597,23 +632,31 @@ footer li a:hover{color:var(--fg)}
     <div class="test-bars">
       <div class="bar">
         <div class="meta"><span class="name">Cartridge tests</span><span class="val">33</span></div>
-        <div class="track"><div class="fill" data-width="47" style="--w:47%"></div></div>
+        <div class="track"><div class="fill" data-width="37" style="--w:37%"></div></div>
       </div>
       <div class="bar">
         <div class="meta"><span class="name">Mapper tests</span><span class="val">16</span></div>
-        <div class="track"><div class="fill" data-width="23" style="--w:23%"></div></div>
+        <div class="track"><div class="fill" data-width="18" style="--w:18%"></div></div>
+      </div>
+      <div class="bar">
+        <div class="meta"><span class="name">Mapper engine tests</span><span class="val">17</span></div>
+        <div class="track"><div class="fill" data-width="19" style="--w:19%"></div></div>
       </div>
       <div class="bar">
         <div class="meta"><span class="name">CPU tests</span><span class="val">12</span></div>
-        <div class="track"><div class="fill" data-width="17" style="--w:17%"></div></div>
+        <div class="track"><div class="fill" data-width="13" style="--w:13%"></div></div>
       </div>
       <div class="bar">
         <div class="meta"><span class="name">Emulator tests</span><span class="val">5</span></div>
-        <div class="track"><div class="fill" data-width="7" style="--w:7%"></div></div>
+        <div class="track"><div class="fill" data-width="6" style="--w:6%"></div></div>
       </div>
       <div class="bar">
         <div class="meta"><span class="name">PPU tests</span><span class="val">3</span></div>
-        <div class="track"><div class="fill" data-width="4" style="--w:4%"></div></div>
+        <div class="track"><div class="fill" data-width="3" style="--w:3%"></div></div>
+      </div>
+      <div class="bar">
+        <div class="meta"><span class="name">Audio tests</span><span class="val">3</span></div>
+        <div class="track"><div class="fill" data-width="3" style="--w:3%"></div></div>
       </div>
       <div class="bar">
         <div class="meta"><span class="name">Controls tests</span><span class="val">1</span></div>
@@ -623,7 +666,7 @@ footer li a:hover{color:var(--fg)}
     <div class="ci">
       <div class="row"><span class="k">cargo fmt --check</span><span class="v ok">PASS</span></div>
       <div class="row"><span class="k">cargo clippy -D warnings</span><span class="v ok">PASS</span></div>
-      <div class="row"><span class="k">cargo test --all-targets</span><span class="v ok">70 TESTS</span></div>
+      <div class="row"><span class="k">cargo test --all-targets</span><span class="v ok">90 TESTS</span></div>
       <div class="row"><span class="k">CI workflow</span><span class="v ok">GREEN</span></div>
       <div class="row"><span class="k">Windows release build</span><span class="v ok">UPLOADED</span></div>
       <div class="row"><span class="k">GUI launched</span><span class="v">NOT VERIFIED</span></div>
@@ -641,9 +684,9 @@ footer li a:hover{color:var(--fg)}
   </div>
   <div class="release">
     <div>
-      <div class="rel-head"><span class="badge ok now">Current milestone</span><span class="chip ok" style="padding:6px 14px;font-size:11px"><span class="b"></span>70 tests passing</span></div>
+      <div class="rel-head"><span class="badge ok now">Current milestone</span><span class="chip ok" style="padding:6px 14px;font-size:11px"><span class="b"></span>90 tests passing</span></div>
       <span class="rel-ver">v0.5.0</span>
-      <p>MMC5 fill-mode nametables, VRC6 CHR banking modes and cycle-counting IRQs, Quattro mapper 232 and PAL timing, plus the PPU scroll fix, 27 more mappers and the UI refresh that landed on main after the milestone. CI is green on all 70 tests.</p>
+      <p>MMC5 fill-mode nametables, VRC6 CHR banking modes and cycle-counting IRQs, Quattro mapper 232 and PAL timing, plus the PPU scroll fix, 57 more mappers and the UI refresh that landed on main after the milestone. CI is green on all 90 tests.</p>
       <div class="rel-actions">
         <a class="btn primary magnetic hover" href="https://github.com/arpitgoswami/nes-core/releases/download/v0.3.0/nes-core-windows.zip" target="_blank" rel="noopener">Download latest release <span class="arrow">-></span></a>
         <a class="btn ghost magnetic hover" href="https://github.com/arpitgoswami/nes-core/releases/latest" target="_blank" rel="noopener">Stable release page <span class="arrow">-></span></a>
@@ -653,7 +696,7 @@ footer li a:hover{color:var(--fg)}
     <div class="meta">
       <div class="r"><span class="k">Version in Cargo.toml</span><span class="v">0.5.0</span></div>
       <div class="r"><span class="k">Milestone date</span><span class="v">2026-11-27</span></div>
-      <div class="r"><span class="k">Tests passing</span><span class="v">70</span></div>
+      <div class="r"><span class="k">Tests passing</span><span class="v">90</span></div>
       <div class="r"><span class="k">v0.5.0 tag</span><span class="v pending">NOT PUBLISHED</span></div>
       <div class="r"><span class="k">v0.5.0 binary</span><span class="v pending">NOT PUBLISHED</span></div>
       <div class="r"><span class="k">Last packaged build</span><span class="v">v0.3.0 WINDOWS ZIP</span></div>
@@ -708,7 +751,7 @@ footer li a:hover{color:var(--fg)}
         <tr><td class="area">Quattro Aladdin submapper</td><td class="status partial">Partial</td><td>Outer bits ignored</td></tr>
         <tr><td class="area">GUI runtime</td><td class="status partial">Unverified</td><td>Compiled, not launched in headless VM</td></tr>
         <tr><td class="area">Audio output</td><td class="status partial">Unverified</td><td>Not heard in headless VM</td></tr>
-        <tr><td class="area">Core emulation</td><td class="status ok">Working</td><td>70 tests pass, CI green</td></tr>
+        <tr><td class="area">Core emulation</td><td class="status ok">Working</td><td>90 tests pass, CI green</td></tr>
         <tr><td class="area">Save states</td><td class="status ok">Working</td><td>Versioned, fingerprinted</td></tr>
         <tr><td class="area">PAL timing</td><td class="status ok">Working</td><td>Header detected</td></tr>
         <tr><td class="area">Expansion audio</td><td class="status ok">Working</td><td>MMC5 and VRC6</td></tr>
