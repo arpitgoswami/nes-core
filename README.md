@@ -10,7 +10,6 @@ and NES 2.0 `.nes` files that the user already owns, renders them, accepts
 keyboard input and produces audio.
 
 [Live progress dashboard](https://arpitgoswami.github.io/nes-core/) ·
-[Completion scale](https://arpitgoswami.github.io/nes-core/#completion) ·
 [Releases](https://github.com/arpitgoswami/nes-core/releases) ·
 [Changelog](CHANGELOG.md) ·
 [Architecture](docs/architecture.md) ·
@@ -61,8 +60,7 @@ The completion score is derived from implemented code and passing tests rather
 than from a plan. Six of the ten levels are closed, level seven is in progress,
 and the resulting score is approximately 65 percent. The
 [dashboard](https://arpitgoswami.github.io/nes-core/) presents the same score
-as a single bar from zero to one hundred, with a marker at the current position
-and the scale divided into ten bands of ten percent each.
+as a percentage, a ten-segment bar and the per-level list.
 
 ### Levels
 
